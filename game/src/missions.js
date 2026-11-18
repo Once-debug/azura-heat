@@ -619,7 +619,7 @@ function spawnTurfWave(game, wave) {
   const s = TURF_SPAWNS[wave % TURF_SPAWNS.length];
   const stop = TURF_STOPS[wave % TURF_STOPS.length];
   const car = game.spawnCar(s.type, s.x, s.y, s.angle, { driver: 'crew', color: '#3a3f4a' });
-  m.crew = [{ car, tx: stop.x, ty: stop.y, count: TURF_WAVES[wave], arrived: false }];
+  m.crew = [{ car, tx: stop.x, ty: stop.y, count: TURF_WAVES[wave], arrived: false, age: 0 }];
   game.showBanner(`WAVE ${wave + 1}`, 'They are rolling onto the dock');
   game.audio?.fail?.();
 }
@@ -646,6 +646,20 @@ function updateTurf(game, def, step, dt) {
       continue;
     }
     driveCarRouted(game, c.car, c.tx, c.ty, 0.85, dt);
+    c.age = (c.age || 0) + dt;
+    // A crew car can lose its fight with the dockyard — a crate, a corner, a
+    // traffic jam at the gate. Half a minute of that and the crew stops
+    // waiting for the perfect entrance and piles out where it stands.
+    if (c.age > 30) {
+      c.arrived = true;
+      c.car.driver = null;
+      c.car.parked = true;
+      c.car.vx = 0;
+      c.car.vy = 0;
+      c.car.speed = 0;
+      game.spawnCrew(c.car.x, c.car.y, c.count);
+      continue;
+    }
     if ((c.car.x - c.tx) ** 2 + (c.car.y - c.ty) ** 2 < 72 * 72) {
       c.arrived = true;
       c.car.driver = null;

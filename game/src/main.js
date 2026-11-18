@@ -306,9 +306,10 @@ function newGame(seed) {
   game.manifestTruck = null;
   game.safehouseOwned = false;
   game.suppressSafehouse = false;
-  // One speedboat rides at anchor alongside the Pier 9 pier, close enough to
-  // her captain standing at the pier's edge to step straight aboard.
-  game.boat = { kind: 'boat', x: 2362, y: 1500, angle: -Math.PI / 2, speed: 0, len: 54, wid: 20, r: 22 };
+  // One speedboat rides at anchor off the east tip of the Pier 9 pier — the
+  // harbor's west-shore plank — close enough for her captain standing at
+  // the tip to step straight aboard, with open water ahead of her bow.
+  game.boat = { kind: 'boat', x: 2348, y: 1600, angle: -Math.PI / 2, speed: 0, len: 54, wid: 20, r: 22 };
   game.event = null;
   game.eventT = 18;
   game.shopPrompt = null;
@@ -1264,9 +1265,10 @@ function carInteractions(dt) {
         spawnParticles(ped.x, ped.y, 5, '#e5484d', 60);
       }
     }
-    // And versus the player, when someone else is driving.
+    // And versus the player, when someone else is driving. A player in the
+    // boat is out of this arithmetic entirely: cars do not run down boats.
     const p = game.player;
-    if (!p.car && car.driver !== 'player' && (p.x - car.x) ** 2 + (p.y - car.y) ** 2 < (car.r + 8) ** 2) {
+    if (!p.car && !p.boat && car.driver !== 'player' && (p.x - car.x) ** 2 + (p.y - car.y) ** 2 < (car.r + 8) ** 2) {
       game.hurtPlayer(11, car.x, car.y);
       p.x += car.vx * 0.12;
       p.y += car.vy * 0.12;

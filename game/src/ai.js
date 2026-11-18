@@ -244,6 +244,7 @@ function spawnCruiser(game) {
     const a = rand(0, Math.PI * 2);
     const x = clamp(player.x + Math.cos(a) * 720, 80, 3120);
     const y = clamp(player.y + Math.sin(a) * 720, 80, 2320);
+    if (isWater(city, x, y)) continue; // cruisers join the chase from dry land
     if (game.cars.some((c) => (c.x - x) ** 2 + (c.y - y) ** 2 < 90 * 90)) continue;
     const car = game.spawnCar('police', x, y, rand(0, Math.PI * 2), { driver: 'police' });
     car.route = null;
@@ -318,7 +319,18 @@ export function updatePolice(game, dt) {
       car.stuckT = 0;
     }
     if (obstacleAhead(game, car, 50) && dPlayer > 200) control.brake = true;
+    const px = car.x;
+    const py = car.y;
     updateCarPhysics(city, car, control, dt);
+    // Cruisers work the streets, not the bay: the shoreline stops them too,
+    // and they hold it there while the suspect makes water noises at them.
+    if (isWater(city, car.x, car.y)) {
+      car.x = px;
+      car.y = py;
+      car.vx = 0;
+      car.vy = 0;
+      car.speed = 0;
+    }
   }
 
   for (const cop of officers) {
