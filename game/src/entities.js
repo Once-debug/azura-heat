@@ -11,6 +11,7 @@ export const CAR_TYPES = {
   pickup: { maxSpeed: 208, accel: 112, len: 52, wid: 24, label: 'Pickup' },
   sports: { maxSpeed: 336, accel: 192, len: 46, wid: 22, label: 'Sports car' },
   police: { maxSpeed: 292, accel: 168, len: 48, wid: 23, label: 'APD cruiser' },
+  moto: { maxSpeed: 322, accel: 214, len: 30, wid: 11, label: 'Motorcycle' },
 };
 
 const CAR_COLORS = ['#b8bec9', '#7a4a3a', '#3a5a7a', '#4a7a52', '#8a8f3a', '#6a3a5e', '#c2c7cf', '#37414d', '#94572e', '#2e6f79'];
@@ -30,6 +31,7 @@ export function makeCar(type, x, y, angle, opts = {}) {
     len: spec.len, wid: spec.wid, r: spec.len * 0.36,
     maxSpeed: spec.maxSpeed, accel: spec.accel,
     color: opts.color ?? (type === 'taxi' ? TAXI_COLOR : type === 'police' ? POLICE_COLOR : pick(CAR_COLORS)),
+    riderShirt: pick(['#c65b4e', '#4e7ac6', '#5aa469', '#c9a44a', '#8a5fc0']),
     health: 100,
     driver: opts.driver ?? null, // 'traffic' | 'police' | 'player' | null (parked, empty)
     hasDriver: !!opts.hasDriver,
@@ -57,6 +59,8 @@ export function makePed(x, y) {
     shirt: pick(['#c65b4e', '#4e7ac6', '#5aa469', '#c9a44a', '#8a5fc0', '#d8d3c3', '#4ec6b8', '#c64e8f']),
     pants: pick(['#2e3440', '#4a4238', '#37455e', '#5e4632']),
     skin: pick(['#e8b98d', '#c68863', '#8d5a3b', '#f0c8a0', '#6e4530']),
+    hat: Math.random() < 0.3 ? pick(['#22242c', '#c9a44a', '#7a2e2e', '#e8e4da', '#2e5e79']) : null,
+    scale: rand(0.9, 1.08),
     dead: false,
   };
 }
@@ -147,6 +151,8 @@ export function updateCarPhysics(city, car, control, dt) {
 }
 
 export function damageCar(car, amount) {
+  // A motorcycle has no bodywork to sacrifice: everything hurts it more.
+  if (car.type === 'moto') amount *= 1.6;
   car.health = Math.max(0, car.health - amount);
 }
 

@@ -165,6 +165,7 @@ export function buildCity(seed) {
   L.police = { name: 'APD Central Station', ...specialBuilding(city, 3, 1, 'APD CENTRAL', 'big', ['#3c4a63', '#5a6d8f'], 52) };
   L.bank = { name: 'Bank of Azura', ...specialBuilding(city, 2, 1, 'BANK OF AZURA', 'big', ['#8a6d2f', '#c8a44a'], 84) };
   L.cafe = { name: 'Cafe Solana', ...specialBuilding(city, 1, 2, 'CAFE SOLANA', 'small', ['#7a4a35', '#a86a4a'], 22) };
+  L.gunshop = { name: 'Iron & Ivory Arms', ...specialBuilding(city, 4, 1, 'IRON & IVORY', 'small', ['#4c4438', '#6e6350'], 26) };
   L.garage = { name: "Sal's Chop Garage", ...specialBuilding(city, 0, 2, "SAL'S GARAGE", 'big', ['#5c4a3a', '#7d6650'], 24) };
   L.warehouse = { name: 'Pier 9 Warehouse', ...specialBuilding(city, 4, 3, 'PIER 9', 'big', ['#54606a', '#71808c'], 26) };
   L.hideout = { name: 'The Boathouse Hideout', ...specialBuilding(city, 3, 4, 'BOATHOUSE', 'small', ['#4a5e57', '#68857c'], 18) };
