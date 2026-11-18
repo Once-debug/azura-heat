@@ -169,18 +169,81 @@ export const POST_MISSIONS = [
   },
 ];
 
+// A third chain, hired out of Pier 9: the Dockmaster moves freight the
+// manifests forget. He starts hiring once Rook has run two jobs for Vera and
+// Sal (mission idx >= 2), in parallel with whatever else the city still owes.
+export const DOCK_MISSIONS = [
+  {
+    id: 'freight',
+    title: 'Night Freight',
+    giver: 'dockmaster',
+    meetText: 'The Dockmaster at Pier 9 is hiring',
+    intro: lines(
+      ['Dockmaster', 'You Rook? Vera\'s runner. I move freight the manifests forget, and tonight the manifest forgot a lot.'],
+      ['Rook', 'Crates at the warehouse, I take it.'],
+      ['Dockmaster', 'Pier 9 warehouse. Load up, run them north-west to Harborlight Storage. The APD watches my routes — two stars ride with you the whole way. Do not stop to chat.'],
+    ),
+    steps: [
+      { kind: 'freightPickup', at: 'warehouse', label: 'Load the crates at Pier 9 warehouse', radius: 56 },
+      { kind: 'freightDrop', at: 'dropoff', label: 'Deliver the freight to Harborlight Storage', radius: 58 },
+    ],
+    reward: 600,
+    outro: lines(['Dockmaster', 'Freight moved, no questions asked on either end. You work the docks like you were born on them. I have more, when you want it.']),
+  },
+  {
+    id: 'turf',
+    title: 'Turf',
+    giver: 'dockmaster',
+    meetText: 'The Dockmaster needs muscle at Pier 9',
+    intro: lines(
+      ['Dockmaster', 'A rival crew decided my dock is their dock. They come by car, in waves, any minute now.'],
+      ['Rook', 'And I am the welcome committee.'],
+      ['Dockmaster', 'Hold Pier 9. Every wave you turn back puts money in your pocket — and keeps my freight breathing.'],
+    ),
+    steps: [
+      { kind: 'turf', at: 'warehouse', label: 'Hold Pier 9 — turn back the rival crew', radius: 280 },
+    ],
+    reward: 150,
+    outro: lines(['Dockmaster', 'Three waves, and the dock still stands. Word travels — nobody tests Pier 9 again for a while.']),
+  },
+  {
+    id: 'manifest',
+    title: 'Manifest',
+    giver: 'dockmaster',
+    meetText: 'The Dockmaster has a timed run at Pier 9',
+    intro: lines(
+      ['Dockmaster', 'Last one, runner. My truck, four drops, one clock: Harborlight, the couriers, the Boathouse, then home to Pier 9.'],
+      ['Rook', 'And if the truck comes back dented?'],
+      ['Dockmaster', 'Bring her back clean and there is a bonus folded into the manifest. Scratch her and we never had this talk.'],
+    ),
+    steps: [
+      { kind: 'circuit', label: 'Run the manifest circuit in the dock truck', time: 120, drops: ['dropoff', 'courier', 'hideout', 'warehouse'] },
+    ],
+    reward: 1100,
+    outro: lines(['Dockmaster', 'Every drop on time. The bay runs on people like you, Rook — it just rarely says so. The dock is quiet now. You made it that way.']),
+  },
+];
+
 export function createMissionState() {
   return {
     idx: 0, // next story mission to run
     phase: 'meet', // meet | steps | done (story finished)
     postIdx: 0, // next post-story mission to run
     postPhase: 'meet', // meet | steps | done (post chain finished)
+    dockIdx: 0, // next Dockmaster mission to run
+    dockPhase: 'locked', // locked | meet | steps | done (unlocks at story idx >= 2)
     stepIdx: 0,
     raceIdx: 0,
     raceT: 0,
     shootoutSpawned: false,
     guardsSpawned: false,
     carrying: '',
+    turfStarted: false,
+    turfWave: 0,
+    crew: [],
+    circuitIdx: 0,
+    circuitStarted: false,
+    circuitT: 0,
   };
 }
 
@@ -200,12 +263,19 @@ function setObjective(game, x, y, text) {
 function beginMission(game, def, chain = 'story') {
   const m = game.mission;
   if (chain === 'post') m.postPhase = 'steps';
+  else if (chain === 'dock') m.dockPhase = 'steps';
   else m.phase = 'steps';
   m.stepIdx = 0;
   m.raceIdx = 0;
   m.shootoutSpawned = false;
   m.guardsSpawned = false;
   m.carrying = '';
+  m.turfStarted = false;
+  m.turfWave = 0;
+  m.crew = [];
+  m.circuitIdx = 0;
+  m.circuitStarted = false;
+  m.circuitT = 0;
   game.startDialogue(def.intro, () => prepareStep(game, def));
 }
 
@@ -229,6 +299,17 @@ function prepareStep(game, def) {
   if (step.kind === 'duel') {
     setupDuel(game, step);
   }
+  if (step.kind === 'turf') {
+    m.turfStarted = false;
+    m.turfWave = 0;
+    m.crew = [];
+  }
+  if (step.kind === 'circuit') {
+    m.circuitIdx = 0;
+    m.circuitStarted = false;
+    m.circuitT = 0;
+    game.spawnManifestTruck();
+  }
   if (step.kind === 'escape' && def.id === 'score' && game.forceStars) {
     game.forceStars(3);
   }
@@ -243,6 +324,9 @@ function completeMission(game, def, chain = 'story') {
   if (chain === 'post') {
     m.postIdx += 1;
     m.postPhase = m.postIdx >= POST_MISSIONS.length ? 'done' : 'meet';
+  } else if (chain === 'dock') {
+    m.dockIdx += 1;
+    m.dockPhase = m.dockIdx >= DOCK_MISSIONS.length ? 'done' : 'meet';
   } else {
     m.idx += 1;
     m.phase = m.idx >= MISSIONS.length ? 'done' : 'meet';
@@ -297,6 +381,27 @@ export function failMission(game) {
       game.repoCar.marked = false;
       if (game.markedCar === game.repoCar) game.markedCar = null;
       game.repoCar = null;
+    }
+  }
+  if (m.dockPhase === 'steps') {
+    m.dockPhase = 'meet';
+    m.stepIdx = 0;
+    m.carrying = '';
+    m.turfStarted = false;
+    m.turfWave = 0;
+    // The rival crew melts away, its cars left cooling where they stopped.
+    game.peds = game.peds.filter((p) => !p.crew);
+    for (const c of m.crew ?? []) {
+      if (c.car && !c.car.dead && c.car.driver === 'crew') {
+        c.car.driver = null;
+        c.car.parked = true;
+      }
+    }
+    m.crew = [];
+    m.circuitStarted = false;
+    if (game.manifestTruck) {
+      if (game.player.car !== game.manifestTruck) game.manifestTruck.dead = true;
+      game.manifestTruck = null;
     }
   }
   game.side = null;
@@ -429,33 +534,8 @@ function updatePostSteps(game, def, dt) {
   }
 }
 
-export function updateMissions(game, dt) {
+function updateStorySteps(game, def, dt) {
   const m = game.mission;
-  if (game.dialogue) return; // the world holds its breath while people talk
-  if (m.phase === 'done') {
-    if (m.postPhase === 'steps') {
-      updatePostSteps(game, POST_MISSIONS[m.postIdx], dt);
-      return;
-    }
-    updateSideJobs(game, dt, true);
-    if (m.postPhase === 'meet' && !game.side) {
-      const def = POST_MISSIONS[m.postIdx];
-      const g = L(game)[def.giver];
-      setObjective(game, g.x, g.y, def.meetText);
-      if (atPoint(game, g.x, g.y, 56)) beginMission(game, def, 'post');
-      return;
-    }
-    if (!game.side) setObjective(game, L(game).taxiStand.x, L(game).taxiStand.y, 'Free roam: fares at the cab stand, parcels at Bay City Couriers');
-    return;
-  }
-  const def = MISSIONS[m.idx];
-  if (m.phase === 'meet') {
-    const g = L(game)[def.giver];
-    setObjective(game, g.x, g.y, def.meetText);
-    if (atPoint(game, g.x, g.y, 56)) beginMission(game, def);
-    return;
-  }
-  // phase === 'steps'
   const step = def.steps[m.stepIdx];
   if (!step) return;
   if (step.kind === 'goto' || step.kind === 'escape') {
@@ -518,6 +598,204 @@ export function updateMissions(game, dt) {
         advanceStep(game, def);
       }
     }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Dockmaster steps: a freight run under a two-star floor, a dock turf war in
+// waves, and a timed circuit in the Dockmaster's own truck.
+
+const TURF_WAVES = [3, 4, 5];
+const TURF_WAVE_CASH = 250;
+const TURF_STOPS = [{ x: 1920, y: 1708 }, { x: 2092, y: 1708 }, { x: 2000, y: 1752 }];
+const TURF_SPAWNS = [
+  { x: 1800, y: 1800, angle: 0, type: 'sedan' },
+  { x: 2600, y: 1800, angle: Math.PI, type: 'pickup' },
+  { x: 1800, y: 1800, angle: 0, type: 'sedan' },
+];
+
+function spawnTurfWave(game, wave) {
+  const m = game.mission;
+  const s = TURF_SPAWNS[wave % TURF_SPAWNS.length];
+  const stop = TURF_STOPS[wave % TURF_STOPS.length];
+  const car = game.spawnCar(s.type, s.x, s.y, s.angle, { driver: 'crew', color: '#3a3f4a' });
+  m.crew = [{ car, tx: stop.x, ty: stop.y, count: TURF_WAVES[wave], arrived: false }];
+  game.showBanner(`WAVE ${wave + 1}`, 'They are rolling onto the dock');
+  game.audio?.fail?.();
+}
+
+function updateTurf(game, def, step, dt) {
+  const m = game.mission;
+  const at = L(game)[step.at];
+  if (!m.turfStarted) {
+    setObjective(game, at.x, at.y, step.label);
+    if (atPoint(game, at.x, at.y, step.radius)) {
+      m.turfStarted = true;
+      m.turfWave = 0;
+      spawnTurfWave(game, 0);
+    }
+    return;
+  }
+  // Drive any crew car still rolling in; its crew piles out on arrival (or
+  // the moment the player helps themselves to the car).
+  for (const c of m.crew ?? []) {
+    if (c.arrived) continue;
+    if (c.car.dead || c.car.driver === 'player') {
+      c.arrived = true;
+      game.spawnCrew(c.car.x, c.car.y, c.count);
+      continue;
+    }
+    driveCarRouted(game, c.car, c.tx, c.ty, 0.85, dt);
+    if ((c.car.x - c.tx) ** 2 + (c.car.y - c.ty) ** 2 < 72 * 72) {
+      c.arrived = true;
+      c.car.driver = null;
+      c.car.parked = true;
+      c.car.vx = 0;
+      c.car.vy = 0;
+      c.car.speed = 0;
+      game.spawnCrew(c.car.x, c.car.y, c.count);
+    }
+  }
+  const firstAlive = game.peds.find((p) => p.crew && !p.dead && p.state !== 'down');
+  if (firstAlive) {
+    setObjective(game, firstAlive.x, firstAlive.y, `Wave ${m.turfWave + 1} — drop the rival crew`);
+    return;
+  }
+  if ((m.crew ?? []).some((c) => !c.arrived)) {
+    setObjective(game, at.x, at.y, `Wave ${m.turfWave + 1} is rolling in — hold the dock`);
+    return;
+  }
+  // The wave is turned back: it pays on the spot, every time.
+  game.addCash(TURF_WAVE_CASH);
+  game.audio?.cash?.();
+  if (m.turfWave + 1 >= TURF_WAVES.length) {
+    advanceStep(game, def, 'dock');
+    return;
+  }
+  game.showBanner('WAVE CLEARED', `+$${TURF_WAVE_CASH} — more on the way`);
+  m.turfWave += 1;
+  spawnTurfWave(game, m.turfWave);
+}
+
+function updateCircuit(game, def, step, dt) {
+  const m = game.mission;
+  const truck = game.manifestTruck;
+  if (!truck || truck.dead) {
+    const at = L(game).warehouse;
+    setObjective(game, at.x, at.y, 'The dock truck is gone — see the Dockmaster');
+    return;
+  }
+  if (!m.circuitStarted) {
+    setObjective(game, truck.x, truck.y, 'Take the provided truck — the clock starts when you roll');
+    if (game.player.car === truck) {
+      m.circuitStarted = true;
+      m.circuitT = step.time;
+      game.showBanner('MANIFEST RUN', `${step.drops.length} drops — bring her back clean for a bonus`);
+      game.audio?.pickup?.();
+    }
+    return;
+  }
+  m.circuitT -= dt;
+  if (m.circuitT <= 0) {
+    game.showBanner('OUT OF TIME', 'The manifest is void. See the Dockmaster to run it again.');
+    game.audio?.fail?.();
+    m.dockPhase = 'meet';
+    m.stepIdx = 0;
+    m.circuitStarted = false;
+    if (game.player.car !== truck) truck.dead = true;
+    game.manifestTruck = null;
+    return;
+  }
+  const at = L(game)[step.drops[m.circuitIdx]];
+  setObjective(game, at.x, at.y, `Drop ${m.circuitIdx + 1}/${step.drops.length}: ${at.name} — ${Math.max(0, Math.ceil(m.circuitT))}s`);
+  if (game.player.car === truck && atPoint(game, at.x, at.y, 58)) {
+    m.circuitIdx += 1;
+    game.audio?.pickup?.();
+    if (m.circuitIdx >= step.drops.length) {
+      if (truck.health >= 85) {
+        game.addCash(300);
+        game.showBanner('CLEAN RUN', '+$300 no-damage bonus');
+      }
+      game.manifestTruck = null; // delivered; the truck stays in the world
+      advanceStep(game, def, 'dock');
+    }
+  }
+}
+
+function updateDockSteps(game, def, dt) {
+  const m = game.mission;
+  const step = def.steps[m.stepIdx];
+  if (!step) return;
+  if (step.kind === 'freightPickup') {
+    const at = L(game)[step.at];
+    setObjective(game, at.x, at.y, step.label);
+    if (atPoint(game, at.x, at.y, step.radius)) {
+      m.carrying = 'crates';
+      game.forceStars(2);
+      game.showBanner('FREIGHT LOADED', 'Two stars ride with you — run it to Harborlight');
+      game.audio?.pickup?.();
+      advanceStep(game, def, 'dock');
+    }
+    return;
+  }
+  if (step.kind === 'freightDrop') {
+    // The wanted floor: the APD keeps the route lit for the whole run, so the
+    // heat can never fall below two stars until the freight is delivered.
+    game.forceStars(2);
+    const at = L(game)[step.at];
+    setObjective(game, at.x, at.y, step.label);
+    if (atPoint(game, at.x, at.y, step.radius)) advanceStep(game, def, 'dock');
+    return;
+  }
+  if (step.kind === 'turf') {
+    updateTurf(game, def, step, dt);
+    return;
+  }
+  if (step.kind === 'circuit') {
+    updateCircuit(game, def, step, dt);
+  }
+}
+
+export function updateMissions(game, dt) {
+  const m = game.mission;
+  if (game.dialogue) return; // the world holds its breath while people talk
+  if (m.dockPhase === 'locked' && m.idx >= 2) m.dockPhase = 'meet';
+  // A chain in its steps owns the marker until it is done or failed.
+  if (m.phase === 'steps') {
+    updateStorySteps(game, MISSIONS[m.idx], dt);
+    return;
+  }
+  if (m.postPhase === 'steps') {
+    updatePostSteps(game, POST_MISSIONS[m.postIdx], dt);
+    return;
+  }
+  if (m.dockPhase === 'steps') {
+    updateDockSteps(game, DOCK_MISSIONS[m.dockIdx], dt);
+    return;
+  }
+  if (m.phase === 'done') updateSideJobs(game, dt, true);
+  if (!game.side) {
+    // Nothing is running: walking up to any available giver starts their
+    // chain. The marker prefers the story, then the late work, then the docks.
+    const meets = [];
+    if (m.phase === 'meet') meets.push({ def: MISSIONS[m.idx], chain: 'story' });
+    if (m.phase === 'done' && m.postPhase === 'meet') meets.push({ def: POST_MISSIONS[m.postIdx], chain: 'post' });
+    if (m.dockPhase === 'meet') meets.push({ def: DOCK_MISSIONS[m.dockIdx], chain: 'dock' });
+    for (const cand of meets) {
+      const g = L(game)[cand.def.giver];
+      if (atPoint(game, g.x, g.y, 56)) {
+        beginMission(game, cand.def, cand.chain);
+        return;
+      }
+    }
+    if (meets.length) {
+      const g = L(game)[meets[0].def.giver];
+      setObjective(game, g.x, g.y, meets[0].def.meetText);
+      return;
+    }
+  }
+  if (m.phase === 'done' && !game.side) {
+    setObjective(game, L(game).taxiStand.x, L(game).taxiStand.y, 'Free roam: fares at the cab stand, parcels at Bay City Couriers');
   }
 }
 
