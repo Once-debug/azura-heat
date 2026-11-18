@@ -151,6 +151,21 @@ export function buildCity(seed) {
       if (district === 'downtown' && rng.chance(0.8)) {
         city.props.push({ kind: 'hydrant', x: rect.x + rng.range(6, rect.w - 6), y: rect.y - 10, r: 4 });
       }
+      // Street furniture, dressed per district: food carts where people gather,
+      // newspaper boxes on downtown corners, benches along the walks. All of it
+      // is scenery — light enough to walk past, so none of it collides.
+      if (district === 'downtown') {
+        if (rng.chance(0.55)) city.props.push({ kind: 'foodcart', x: rect.x + rect.w / 2, y: rect.y + rect.h + 12, r: 9 });
+        if (rng.chance(0.7)) city.props.push({ kind: 'newsbox', x: rect.x - 13, y: rect.y + rect.h + 12, r: 5 });
+        if (rng.chance(0.5)) city.props.push({ kind: 'bench', x: rect.x + rng.range(30, rect.w - 30), y: rect.y - 12, r: 6 });
+      } else if (district === 'residential') {
+        if (rng.chance(0.4)) city.props.push({ kind: 'bench', x: rect.x + rng.range(30, rect.w - 30), y: rect.y + rect.h + 12, r: 6 });
+        if (rng.chance(0.3)) city.props.push({ kind: 'foodcart', x: rect.x + rect.w / 2, y: rect.y - 12, r: 9 });
+        if (rng.chance(0.5)) city.props.push({ kind: 'hydrant', x: rect.x + rng.range(6, rect.w - 6), y: rect.y + rect.h + 10, r: 4 });
+      } else if (district === 'harbor') {
+        if (rng.chance(0.4)) city.props.push({ kind: 'foodcart', x: rect.x + rng.range(40, rect.w - 40), y: rect.y - 12, r: 9 });
+        if (rng.chance(0.4)) city.props.push({ kind: 'bench', x: rect.x + rng.range(30, rect.w - 30), y: rect.y + rect.h + 12, r: 6 });
+      }
       if (district === 'harbor') {
         for (let k = 0; k < 3; k += 1) {
           city.props.push({ kind: 'palm', x: rect.x + rng.range(12, rect.w - 12), y: rect.y + rect.h - 12, r: 7 });
@@ -169,6 +184,10 @@ export function buildCity(seed) {
   L.garage = { name: "Sal's Chop Garage", ...specialBuilding(city, 0, 2, "SAL'S GARAGE", 'big', ['#5c4a3a', '#7d6650'], 24) };
   L.warehouse = { name: 'Pier 9 Warehouse', ...specialBuilding(city, 4, 3, 'PIER 9', 'big', ['#54606a', '#71808c'], 26) };
   L.hideout = { name: 'The Boathouse Hideout', ...specialBuilding(city, 3, 4, 'BOATHOUSE', 'small', ['#4a5e57', '#68857c'], 18) };
+  L.safehouse = { name: 'Palms Safehouse', ...specialBuilding(city, 6, 2, 'PALMS SAFEHOUSE', 'small', ['#5f7263', '#7f9684'], 14) };
+  const dropRect = blockRect(0, 0);
+  L.dropoff = { name: 'Harborlight Storage', x: dropRect.x + dropRect.w / 2, y: dropRect.y + dropRect.h + 26 };
+  L.dockmaster = { name: 'The Dockmaster', x: L.warehouse.x + 78, y: L.warehouse.y + 10 };
   const taxiRect = blockRect(1, 1);
   L.taxiStand = { name: 'Azura Cabs Stand', x: taxiRect.x + taxiRect.w / 2, y: taxiRect.y + taxiRect.h + 26 };
   const courierRect = blockRect(0, 3);
@@ -188,6 +207,14 @@ export function buildCity(seed) {
     }
   }
   return city;
+}
+
+/** True when the point sits on open water (one of the harbor's water blocks). */
+export function isWater(city, x, y) {
+  for (const w of city.waterRects) {
+    if (x >= w.x && x <= w.x + w.w && y >= w.y && y <= w.y + w.h) return true;
+  }
+  return false;
 }
 
 /** True when the point sits on a road (either a vertical or a horizontal strip). */

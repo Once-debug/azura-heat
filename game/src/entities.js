@@ -12,6 +12,8 @@ export const CAR_TYPES = {
   sports: { maxSpeed: 336, accel: 192, len: 46, wid: 22, label: 'Sports car' },
   police: { maxSpeed: 292, accel: 168, len: 48, wid: 23, label: 'APD cruiser' },
   moto: { maxSpeed: 322, accel: 214, len: 30, wid: 11, label: 'Motorcycle' },
+  truck: { maxSpeed: 168, accel: 84, len: 78, wid: 26, label: 'Truck' },
+  bus: { maxSpeed: 178, accel: 88, len: 84, wid: 27, label: 'Bus' },
 };
 
 const CAR_COLORS = ['#b8bec9', '#7a4a3a', '#3a5a7a', '#4a7a52', '#8a8f3a', '#6a3a5e', '#c2c7cf', '#37414d', '#94572e', '#2e6f79'];
