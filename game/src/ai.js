@@ -3,7 +3,7 @@
 // cruisers that route across town and ram, officers who chase on foot, and the thugs
 // who shoot back during missions.
 
-import { ROAD_HALF, roadRoute, losBlocked, collideBuildings, collideProps, randomSidewalkPoint } from './world.js';
+import { ROAD_HALF, roadRoute, losBlocked, isWater, collideBuildings, collideProps, randomSidewalkPoint } from './world.js';
 import { updateCarPhysics } from './entities.js';
 import { angleDelta, clamp, rand } from './rng.js';
 import { audio } from './audio.js';
@@ -267,7 +267,7 @@ export function updatePolice(game, dt) {
   // Officers pile out when a cruiser gets close to a player on foot.
   const wantedOfficers = stars >= 3 ? Math.min(stars - 1, 3) : 0;
   const officers = game.peds.filter((p) => p.kind === 'officer' && !p.dead && p.state !== 'down');
-  if (officers.length < wantedOfficers && !player.car) {
+  if (officers.length < wantedOfficers && !player.car && !player.boat) {
     const near = cruisers.find((c) => (c.x - player.x) ** 2 + (c.y - player.y) ** 2 < 190 * 190);
     if (near && Math.abs(near.speed) < 90) {
       game.spawnOfficer(near.x + rand(-16, 16), near.y + rand(-16, 16));
@@ -324,7 +324,15 @@ export function updatePolice(game, dt) {
   for (const cop of officers) {
     if (cop.state === 'down') continue;
     const target = player.car ?? player;
+    const px = cop.x;
+    const py = cop.y;
     stepWalker(city, cop, target.x, target.y, 203, dt);
+    // Officers work the streets, not the bay: the shoreline stops them, and
+    // they hold it there while the suspect makes water noises at them.
+    if (isWater(city, cop.x, cop.y)) {
+      cop.x = px;
+      cop.y = py;
+    }
   }
 }
 

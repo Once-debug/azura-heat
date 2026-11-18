@@ -3,10 +3,10 @@
 // and hospital visits, ambient traffic, and the glue between the city (world.js), the
 // people in it (ai.js), the story (missions.js) and the drawing (render.js).
 
-import { buildCity, losBlocked, collideBuildings, collideProps, WORLD_W, WORLD_H } from './world.js';
+import { buildCity, losBlocked, collideBuildings, collideProps, isWater, WORLD_W, WORLD_H } from './world.js';
 import { makeCar, makePed, makeOfficer, makeThug, updateCarPhysics, collideCarPair, damageCar } from './entities.js';
 import { updateTraffic, updatePeds, updatePolice, updateThugs } from './ai.js';
-import { createMissionState, updateMissions, failMission, MISSIONS, POST_MISSIONS } from './missions.js';
+import { createMissionState, updateMissions, failMission, MISSIONS, POST_MISSIONS, DOCK_MISSIONS } from './missions.js';
 import { drawGame } from './render.js';
 import { stageShot } from './shots.js';
 import { Input } from './input.js';
@@ -50,6 +50,10 @@ const game = {
   repoCar: null,
   targetPed: null,
   duel: null,
+  boat: null,
+  safehouseOwned: false,
+  manifestTruck: null,
+  suppressSafehouse: false,
   shopPrompt: null,
   sprayT: 0,
   chatter: null,
@@ -69,7 +73,7 @@ const game = {
 function freshPlayer(x, y) {
   return {
     id: 0, kind: 'player', x, y, r: 10, angle: -Math.PI / 2, speed: 0,
-    hp: 100, car: null, moving: false,
+    hp: 100, car: null, boat: null, moving: false,
     weapon: 'fist', hasPistol: false, mag: 0, ammo: 0, reloading: 0, atkT: 0,
     hasSMG: false, smgMag: 0, smgAmmo: 0, armor: 0,
     shirt: '#12b5a5', pants: '#2e3440', skin: '#c68863', state: 'walk',
@@ -139,6 +143,24 @@ game.spawnGuards = (x, y) => {
   }
 };
 
+/** A rival-crew shore party for the dock turf war, tagged so the mission can count it. */
+game.spawnCrew = (x, y, n) => {
+  for (let k = 0; k < n; k += 1) {
+    const t = makeThug(x + rand(-38, 38), y + rand(-38, 38));
+    t.crew = true;
+    game.peds.push(t);
+  }
+};
+
+/** The Dockmaster's own truck, waiting at the Pier 9 warehouse for the circuit. */
+game.spawnManifestTruck = () => {
+  if (game.manifestTruck && game.player.car !== game.manifestTruck) game.manifestTruck.dead = true;
+  const L = game.city.locations;
+  const truck = game.spawnCar('truck', L.warehouse.x - 118, L.warehouse.y + 38, 0, { parked: true, color: '#7a6a4f' });
+  game.manifestTruck = truck;
+  return truck;
+};
+
 game.spawnTarget = () => {
   const park = game.city.locations.park;
   const ped = makePed(park.x + rand(-60, 60), park.y + rand(-40, 40));
@@ -166,7 +188,9 @@ game.startDialogue = (dialogueLines, onDone) => {
 };
 
 game.forceStars = (n) => {
-  game.wanted.heat = Math.max(game.wanted.heat, STAR_HEAT[n]);
+  // A forced level lands a little above its threshold, so the stars the game
+  // means to show do not evaporate in the first second out of sight.
+  game.wanted.heat = Math.max(game.wanted.heat, STAR_HEAT[n] + 6);
 };
 
 game.hurtPlayer = (dmg, fromX, fromY) => {
@@ -205,6 +229,9 @@ game.saveGame = () => {
     phase: game.mission.phase === 'done' ? 'done' : 'meet',
     postIdx: game.mission.postIdx,
     postPhase: game.mission.postPhase === 'steps' ? 'meet' : game.mission.postPhase,
+    dockIdx: game.mission.dockIdx,
+    dockPhase: game.mission.dockPhase === 'steps' ? 'meet' : game.mission.dockPhase,
+    safehouse: game.safehouseOwned,
     x: Math.round(game.player.x),
     y: Math.round(game.player.y),
     hasPistol: game.player.hasPistol,
@@ -229,11 +256,11 @@ function populate() {
     const j = Math.floor(rng.next() * (k + 1));
     [spots[k], spots[j]] = [spots[j], spots[k]];
   }
-  const parkedTypes = ['sedan', 'sedan', 'taxi', 'pickup', 'sedan', 'sports', 'moto'];
+  const parkedTypes = ['sedan', 'sedan', 'taxi', 'pickup', 'sedan', 'sports', 'moto', 'truck'];
   for (const s of spots.slice(0, 36)) {
     game.spawnCar(rng.pick(parkedTypes), s.x, s.y, s.angle, { parked: true });
   }
-  const trafficTypes = ['sedan', 'sedan', 'taxi', 'pickup', 'sedan', 'moto'];
+  const trafficTypes = ['sedan', 'sedan', 'taxi', 'pickup', 'sedan', 'moto', 'truck', 'bus'];
   for (let k = 0; k < 18; k += 1) {
     const vx = 200 + Math.floor(rng.next() * 8) * 400;
     const vy = 200 + Math.floor(rng.next() * 6) * 400;
@@ -276,6 +303,12 @@ function newGame(seed) {
   game.repoCar = null;
   game.targetPed = null;
   game.duel = null;
+  game.manifestTruck = null;
+  game.safehouseOwned = false;
+  game.suppressSafehouse = false;
+  // One speedboat rides at anchor alongside the Pier 9 pier, close enough to
+  // her captain standing at the pier's edge to step straight aboard.
+  game.boat = { kind: 'boat', x: 2362, y: 1500, angle: -Math.PI / 2, speed: 0, len: 54, wid: 20, r: 22 };
   game.event = null;
   game.eventT = 18;
   game.shopPrompt = null;
@@ -306,6 +339,11 @@ function continueGame() {
     ? 'done'
     : (save.postPhase === 'done' ? 'done' : 'meet');
   if (game.mission.phase !== 'done') game.mission.postPhase = 'meet';
+  game.mission.dockIdx = clamp(save.dockIdx ?? 0, 0, DOCK_MISSIONS.length);
+  game.mission.dockPhase = game.mission.dockIdx >= DOCK_MISSIONS.length
+    ? 'done'
+    : (game.mission.idx >= 2 ? 'meet' : 'locked');
+  game.safehouseOwned = !!save.safehouse;
   game.player.x = save.x ?? game.player.x;
   game.player.y = save.y ?? game.player.y;
   game.player.hasPistol = !!save.hasPistol;
@@ -391,6 +429,14 @@ function copSeesPlayer() {
 function updateWanted(dt) {
   const w = game.wanted;
   w.stars = starsFromHeat(w.heat);
+  if (game.player.boat) {
+    // Nobody pursues on the water: no bust pressure out here, and the heat
+    // simply bleeds away while the cruisers wait on roads they cannot leave.
+    w.heat = Math.max(0, w.heat - 3.4 * dt);
+    w.bustT = Math.max(0, w.bustT - dt * 1.6);
+    w.stars = starsFromHeat(w.heat);
+    return;
+  }
   if (copSeesPlayer()) w.losT = 0;
   else w.losT += dt;
   if (w.losT > 5 && w.heat > 0) w.heat = Math.max(0, w.heat - 3.4 * dt);
@@ -430,6 +476,7 @@ function wasted() {
     p.car.driver = null;
     p.car = null;
   }
+  p.boat = null; // the boat rides at anchor wherever the run ended
   clearHeat();
   failMission(game);
   const L = game.city.locations;
@@ -698,11 +745,107 @@ function exitCar() {
   if (!car) return;
   car.driver = null;
   car.parked = true;
+  // The same E press must not also open the safehouse door on the way out.
+  game.suppressSafehouse = true;
   const side = car.angle + Math.PI / 2;
   p.x = car.x + Math.cos(side) * (car.wid + 14);
   p.y = car.y + Math.sin(side) * (car.wid + 14);
   p.car = null;
   audio.blip();
+}
+
+// ---------------------------------------------------------------------------
+// The speedboat: she lives on the water and nowhere else. Her hull is tested
+// at the centre and at bow and stern; a move that would beach her slides
+// along the shore instead, and only a pier lets her captain step off.
+
+function boatSpotOk(x, y, angle) {
+  const fx = Math.cos(angle);
+  const fy = Math.sin(angle);
+  for (const s of [0, 24, -24]) {
+    const px = x + fx * s;
+    const py = y + fy * s;
+    if (!isWater(game.city, px, py)) return false;
+    for (const pier of game.city.piers) {
+      if (px > pier.x - 7 && px < pier.x + pier.w + 7 && py > pier.y - 7 && py < pier.y + pier.h + 7) return false;
+    }
+  }
+  return true;
+}
+
+function boardBoat() {
+  const p = game.player;
+  p.boat = game.boat;
+  p.x = game.boat.x;
+  p.y = game.boat.y;
+  p.angle = game.boat.angle;
+  audio.blip();
+}
+
+function exitBoat() {
+  const p = game.player;
+  const b = game.boat;
+  if (!b) {
+    p.boat = null;
+    return;
+  }
+  for (const pier of game.city.piers) {
+    const nx = clamp(b.x, pier.x, pier.x + pier.w);
+    const ny = clamp(b.y, pier.y, pier.y + pier.h);
+    if ((nx - b.x) ** 2 + (ny - b.y) ** 2 < 74 * 74) {
+      p.x = nx;
+      p.y = ny;
+      p.boat = null;
+      audio.blip();
+      return;
+    }
+  }
+  game.showBanner('NO DOCK IN REACH', 'Ease up to a pier to step off');
+}
+
+function updateBoatRide(dt) {
+  const p = game.player;
+  const b = game.boat;
+  if (!b) {
+    p.boat = null;
+    return;
+  }
+  const throttle = (input.down('w', 'arrowup') ? 1 : 0) + (input.down('s', 'arrowdown') ? -1 : 0);
+  const steer = (input.down('a', 'arrowleft') ? -1 : 0) + (input.down('d', 'arrowright') ? 1 : 0);
+  if (throttle > 0) b.speed += 205 * dt;
+  else if (throttle < 0) b.speed -= (b.speed > 10 ? 250 : 120) * dt;
+  b.speed -= b.speed * 0.55 * dt; // water drag
+  b.speed = clamp(b.speed, -95, 352);
+  if (Math.abs(b.speed) > 3) {
+    b.angle += steer * 1.35 * dt * Math.sign(b.speed) * clamp(Math.abs(b.speed) / 130, 0.25, 1);
+  }
+  const dx = Math.cos(b.angle) * b.speed * dt;
+  const dy = Math.sin(b.angle) * b.speed * dt;
+  const tryMove = (nx, ny) => {
+    if (!boatSpotOk(nx, ny, b.angle)) return false;
+    b.x = nx;
+    b.y = ny;
+    return true;
+  };
+  if (!tryMove(b.x + dx, b.y + dy) && !tryMove(b.x + dx, b.y) && !tryMove(b.x, b.y + dy)) {
+    b.speed *= 0.35; // a soft stop against the shore or a pier
+  }
+  p.x = b.x;
+  p.y = b.y;
+  p.angle = b.angle;
+  p.moving = Math.abs(b.speed) > 12;
+  // The wake: foam astern that breathes out and dies behind her.
+  if (Math.abs(b.speed) > 42) {
+    const sx = b.x - Math.cos(b.angle) * b.len * 0.5;
+    const sy = b.y - Math.sin(b.angle) * b.len * 0.5;
+    game.particles.push({
+      x: sx + rand(-4, 4), y: sy + rand(-4, 4),
+      vx: -Math.cos(b.angle) * 18 + rand(-9, 9), vy: -Math.sin(b.angle) * 18 + rand(-9, 9),
+      life: rand(0.7, 1.3), max: 1.3, size: rand(3, 6.5), color: 'rgba(215,238,252,0.85)',
+    });
+    if (game.particles.length > 900) game.particles.splice(0, game.particles.length - 900);
+  }
+  if (input.hit('e')) exitBoat();
 }
 
 function updatePlayer(dt) {
@@ -754,6 +897,11 @@ function updatePlayer(dt) {
     return;
   }
 
+  if (p.boat) {
+    updateBoatRide(dt);
+    return;
+  }
+
   // On foot.
   let dx = (input.down('d', 'arrowright') ? 1 : 0) - (input.down('a', 'arrowleft') ? 1 : 0);
   let dy = (input.down('s', 'arrowdown') ? 1 : 0) - (input.down('w', 'arrowup') ? 1 : 0);
@@ -789,8 +937,16 @@ function updatePlayer(dt) {
   }
   if (input.hit('r')) startReload();
   if (input.hit('e')) {
-    const car = nearestEnterableCar();
-    if (car) enterCar(car);
+    const b = game.boat;
+    const sh = game.city.locations.safehouse;
+    if (b && (b.x - p.x) ** 2 + (b.y - p.y) ** 2 < 48 * 48) {
+      boardBoat();
+    } else if (sh && (p.x - sh.x) ** 2 + (p.y - sh.y) ** 2 < 54 * 54) {
+      // The safehouse door: updateShops reads this same press.
+    } else {
+      const car = nearestEnterableCar();
+      if (car) enterCar(car);
+    }
   }
   // Ammo pickups are walked over; they feed whichever gun is in hand.
   for (const pk of game.pickups) {
@@ -830,7 +986,7 @@ function maintainAmbient(dt) {
   if (trafficCount < 14) {
     const vx = clamp(Math.round((p.x + rand(-800, 800)) / 400) * 400 + 200, 200, 3000);
     const vy = clamp(Math.round((p.y + rand(-800, 800)) / 400) * 400 + 200, 200, 2200);
-    const types = ['sedan', 'sedan', 'taxi', 'pickup', 'sedan', 'moto'];
+    const types = ['sedan', 'sedan', 'taxi', 'pickup', 'sedan', 'moto', 'truck', 'bus'];
     game.spawnCar(types[Math.floor(Math.random() * types.length)], vx + 26, vy, Math.PI / 2, { driver: 'traffic', hasDriver: true });
   }
   // Two APD patrols work their beats while the city is calm.
@@ -862,6 +1018,7 @@ const SMG_COST = 600;
 const ARMOR_COST = 300;
 const SMG_AMMO_COST = 120;
 const ARMOR_REPAIR_COST = 150;
+const SAFEHOUSE_COST = 2500;
 
 function pickCarColor(notColor) {
   const colors = ['#b8bec9', '#7a4a3a', '#3a5a7a', '#4a7a52', '#8a8f3a', '#6a3a5e', '#c2c7cf', '#37414d', '#94572e', '#2e6f79', '#c22e3e', '#28418c'];
@@ -935,6 +1092,35 @@ function updateShops() {
       }
     }
   }
+  // The Palms safehouse: buy it once, then its door is a saved game and a
+  // clean slate for as long as Rook owns the keys.
+  const sh = L.safehouse;
+  if (sh && (p.x - sh.x) ** 2 + (p.y - sh.y) ** 2 < 54 * 54) {
+    if (!game.safehouseOwned) {
+      game.shopPrompt = { kind: 'safehouse', text: `E — Buy the Palms safehouse: $${SAFEHOUSE_COST} (saves the game, kills the heat)` };
+      if (input.hit('e') && !game.suppressSafehouse) {
+        if (game.cash >= SAFEHOUSE_COST) {
+          game.cash -= SAFEHOUSE_COST;
+          game.safehouseOwned = true;
+          game.showBanner('SAFEHOUSE BOUGHT', 'The Palms is yours now. Duck in any time: saved, and the heat dies at the door.');
+          audio.cash();
+          game.saveGame();
+        } else {
+          game.showBanner('NOT ENOUGH CASH', `The Palms safehouse goes for $${SAFEHOUSE_COST}`);
+          audio.fail();
+        }
+      }
+    } else {
+      game.shopPrompt = { kind: 'safehouse', text: 'E — Duck into your safehouse: save the game, lose the heat' };
+      if (input.hit('e') && !game.suppressSafehouse) {
+        clearHeat();
+        game.showBanner('SAFEHOUSE', 'Heat\'s off, game saved. The city can wait outside.');
+        audio.blip();
+        game.saveGame();
+      }
+    }
+  }
+  game.suppressSafehouse = false;
 }
 
 // ---------------------------------------------------------------------------
@@ -1100,6 +1286,17 @@ function update(dt) {
     updateTraffic(game, dt);
     updatePeds(game, dt);
     updateFx(dt);
+    if (game.screen === 'title' && !game.cameraLock) {
+      // The title drifts: a slow pan across downtown behind the logo, on a
+      // long lissajous that never quite repeats. Staged screenshot scenes
+      // lock the camera, so the cover framing never moves.
+      game.titleT = (game.titleT || 0) + dt;
+      const t = game.titleT;
+      const cx = 1150 + Math.sin(t * 0.045) * 560;
+      const cy = 760 + Math.sin(t * 0.031 + 1.2) * 300;
+      game.camera.x = clamp(cx - game.view.w / 2, 0, Math.max(0, WORLD_W - game.view.w));
+      game.camera.y = clamp(cy - game.view.h / 2, 0, Math.max(0, WORLD_H - game.view.h));
+    }
     return;
   }
   if (game.screen !== 'play') return;
@@ -1153,7 +1350,7 @@ function update(dt) {
 
   // Sound that follows the action.
   const p = game.player;
-  audio.engine(!!p.car, p.car ? Math.abs(p.car.speed) / p.car.maxSpeed : 0, dt);
+  audio.engine(!!p.car || !!p.boat, p.car ? Math.abs(p.car.speed) / p.car.maxSpeed : p.boat && game.boat ? Math.abs(game.boat.speed) / 352 : 0, dt);
   const copNear = game.cars.some((c) => c.isPolice && !c.dead && (c.x - p.x) ** 2 + (c.y - p.y) ** 2 < 480 * 480);
   audio.siren(copNear && game.wanted.stars > 0, dt, game.time);
 
