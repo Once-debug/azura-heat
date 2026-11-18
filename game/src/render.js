@@ -902,6 +902,11 @@ function drawTitle(ctx, game) {
   ctx.fillStyle = '#e8ecf4';
   ctx.font = '17px system-ui, sans-serif';
   ctx.fillText('Rook drove into Azura Bay with a hundred dollars and a past. The city provides the rest.', w / 2, h * 0.3 + 132);
+  ctx.font = '13px system-ui, sans-serif';
+  ctx.fillStyle = '#8fa3c8';
+  ctx.fillText("Work for Vera and Sal · spend it at Iron & Ivory Arms · lose the heat in Sal's respray bay", w / 2, h * 0.3 + 158);
+  ctx.font = '17px system-ui, sans-serif';
+  ctx.fillStyle = '#e8ecf4';
   const items = game.hasSaveFile ? ['NEW GAME', 'CONTINUE', 'HOW TO PLAY'] : ['NEW GAME', 'HOW TO PLAY'];
   ctx.font = 'bold 24px system-ui, sans-serif';
   items.forEach((label, i) => {
@@ -945,6 +950,7 @@ function drawHelp(ctx, game) {
     'Fares at the cab stand and parcels at Bay City Couriers pay forever.',
     "Hot? Roll into Sal's bay: $150 buys a respray and a clean slate.",
     'Iron & Ivory Arms sells the SMG and body armor — walk up, press F / G.',
+    'Motorcycles — light, quick, and gone before the cruisers blink. Steal one and lean.',
     'After the finale, the city keeps offering work. And races. Bring a fast car.',
   ];
   rows.forEach((row, i) => ctx.fillText(row, w / 2, h * 0.32 + i * 32));

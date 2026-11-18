@@ -4,7 +4,7 @@
 // module advances it and keeps game.objective pointing at the next thing to do.
 
 import { rand } from './rng.js';
-import { stepWalker, driveCarToPoint } from './ai.js';
+import { stepWalker, driveCarRouted } from './ai.js';
 
 const L = (game) => game.city.locations;
 
@@ -305,12 +305,18 @@ export function failMission(game) {
 // ---------------------------------------------------------------------------
 // Post-story steps: the guarded repo, the park target, and the duel series.
 
+// The duelist grids up staggered behind the start point — never nose-to-tail
+// with the player, where its obstacle probe would jam it against their bumper.
+const DUEL_GRID = { x: -34, y: 92 };
+
 function setupDuel(game, step) {
   const c = DUEL_COURSES[step.course];
   if (game.duel && game.duel.car) game.duel.car.dead = true;
   const first = c.points[0];
-  const angle = Math.atan2(first.y - (DUEL_START.y + 36), first.x - DUEL_START.x);
-  const car = game.spawnCar(c.car, DUEL_START.x, DUEL_START.y + 36, angle, { driver: 'racer', color: '#e07b2a' });
+  const gx = DUEL_START.x + DUEL_GRID.x;
+  const gy = DUEL_START.y + DUEL_GRID.y;
+  const angle = Math.atan2(first.y - gy, first.x - gx);
+  const car = game.spawnCar(c.car, gx, gy, angle, { driver: 'racer', color: '#e07b2a' });
   game.duel = {
     car, carType: c.car, points: c.points, cruise: c.cruise, name: c.name,
     oppIdx: 0, playerIdx: 0, state: 'lineup',
@@ -341,7 +347,7 @@ function updateDuel(game, def, step, dt) {
   }
   const oppTarget = pts[Math.min(d.oppIdx, pts.length - 1)];
   const cruise = Math.min(1.08, Math.max(0.7, d.cruise + (d.playerIdx - d.oppIdx) * 0.05));
-  driveCarToPoint(game, d.car, oppTarget.x, oppTarget.y, cruise, dt);
+  driveCarRouted(game, d.car, oppTarget.x, oppTarget.y, cruise, dt);
   if ((d.car.x - oppTarget.x) ** 2 + (d.car.y - oppTarget.y) ** 2 < 72 * 72) d.oppIdx += 1;
   if (d.oppIdx >= pts.length) {
     game.showBanner('OUTRUN', 'The orange car takes it. Line up and run it back.');
@@ -349,8 +355,8 @@ function updateDuel(game, def, step, dt) {
     d.oppIdx = 0;
     d.playerIdx = 0;
     d.state = 'lineup';
-    d.car.x = DUEL_START.x;
-    d.car.y = DUEL_START.y + 36;
+    d.car.x = DUEL_START.x + DUEL_GRID.x;
+    d.car.y = DUEL_START.y + DUEL_GRID.y;
     d.car.vx = 0;
     d.car.vy = 0;
     d.car.speed = 0;

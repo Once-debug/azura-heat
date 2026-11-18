@@ -67,6 +67,8 @@ export function stageShot(game, name) {
     game.spawnOfficer(1500, 1090);
     placeTrafficNear(game, 1400, 1000, 3);
     placePedsNear(game, 1480, 920, 3);
+    // Frozen scenes never tick the radio, so set the dispatch line directly.
+    game.chatter = { text: 'Dispatch: copy that, keep eyes on the suspect', t: 4.2 };
     game.objective = { x: L.hideout.x, y: L.hideout.y, text: 'Lose the heat — or make a run for the Boathouse' };
   } else if (name === 'mission') {
     game.screen = 'play';

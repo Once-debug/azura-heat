@@ -3,7 +3,7 @@
 // cruisers that route across town and ram, officers who chase on foot, and the thugs
 // who shoot back during missions.
 
-import { ROAD_HALF, roadRoute, collideBuildings, collideProps, randomSidewalkPoint } from './world.js';
+import { ROAD_HALF, roadRoute, losBlocked, collideBuildings, collideProps, randomSidewalkPoint } from './world.js';
 import { updateCarPhysics } from './entities.js';
 import { angleDelta, clamp, rand } from './rng.js';
 import { audio } from './audio.js';
@@ -111,16 +111,64 @@ export function driveCarToPoint(game, car, tx, ty, cruise, dt) {
     control = { throttle: 0.1, steer: control.steer, brake: true, handbrake: false };
     car.brakeLight = 0.2;
   }
-  if (Math.abs(car.speed) < 9 && control.throttle > 0) {
+  if (car.reverseT > 0) {
+    // A latched back-out: run the full reverse even as speed builds, or the
+    // brain forgets it was stuck the moment the car starts moving and rolls
+    // straight back into the same wall.
+    car.reverseT -= dt;
+    control = { throttle: -1, steer: -control.steer, brake: false, handbrake: false };
+  } else if (Math.abs(car.speed) < 9 && control.throttle > 0) {
     car.stuckT = (car.stuckT || 0) + dt;
     if (car.stuckT > 1.1) {
-      control = { throttle: -0.8, steer: -control.steer, brake: false, handbrake: false };
-      if (car.stuckT > 1.9) car.stuckT = 0;
+      car.stuckT = 0;
+      car.reverseT = 1.6;
     }
   } else {
     car.stuckT = 0;
   }
   updateCarPhysics(game.city, car, control, dt);
+}
+
+/**
+ * Drive at a far point the way a local would: along the road grid while the
+ * straight line is long or blocked by buildings, then directly for the last
+ * stretch. The duel courses turn at intersections a block away, and a brain
+ * that only ever beelines face-plants into the first building on the line.
+ */
+export function driveCarRouted(game, car, tx, ty, cruise, dt) {
+  const d = Math.hypot(tx - car.x, ty - car.y);
+  if (d < 300 && !losBlocked(game.city, car.x, car.y, tx, ty)) {
+    car.route = null;
+    driveCarToPoint(game, car, tx, ty, cruise, dt);
+    return;
+  }
+  // The route is sticky: rebuilding it on a timer keeps snapping the plan
+  // back to whichever intersection is nearest, and the car orbits the block
+  // instead of ever leaving it. Rebuild only for a genuinely new target.
+  const targetMoved = car.routeTx === undefined || Math.hypot(tx - car.routeTx, ty - car.routeTy) > 150;
+  if (!car.route || car.routeIdx >= car.route.length || targetMoved) {
+    car.route = roadRoute(car.x, car.y, tx, ty);
+    car.routeIdx = 0;
+    car.routeTx = tx;
+    car.routeTy = ty;
+  }
+  // Advance past reached nodes, and past any node the car has drawn level
+  // with (the next one is nearer), so a wide swing through an intersection
+  // never sends it back around the block.
+  while (car.routeIdx < car.route.length) {
+    const node = car.route[car.routeIdx];
+    const dn = Math.hypot(node.x - car.x, node.y - car.y);
+    const next = car.route[car.routeIdx + 1];
+    if (dn < 84 || (next && Math.hypot(next.x - car.x, next.y - car.y) < dn)) car.routeIdx += 1;
+    else break;
+  }
+  if (car.routeIdx >= car.route.length) {
+    car.route = null;
+    driveCarToPoint(game, car, tx, ty, cruise, dt);
+    return;
+  }
+  const node = car.route[car.routeIdx];
+  driveCarToPoint(game, car, node.x, node.y, cruise, dt);
 }
 
 export function updatePeds(game, dt) {
