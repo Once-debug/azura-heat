@@ -6,7 +6,7 @@
 import { buildCity, losBlocked, collideBuildings, collideProps, WORLD_W, WORLD_H } from './world.js';
 import { makeCar, makePed, makeOfficer, makeThug, updateCarPhysics, collideCarPair, damageCar } from './entities.js';
 import { updateTraffic, updatePeds, updatePolice, updateThugs } from './ai.js';
-import { createMissionState, updateMissions, failMission } from './missions.js';
+import { createMissionState, updateMissions, failMission, MISSIONS, POST_MISSIONS } from './missions.js';
 import { drawGame } from './render.js';
 import { stageShot } from './shots.js';
 import { Input } from './input.js';
@@ -47,6 +47,15 @@ const game = {
   banner: null,
   objective: null,
   markedCar: null,
+  repoCar: null,
+  targetPed: null,
+  duel: null,
+  shopPrompt: null,
+  sprayT: 0,
+  chatter: null,
+  chatterT: 4,
+  event: null,
+  eventT: 18,
   danger: null,
   policeSpawnT: 0,
   stats: { missions: 0, stolen: 0, fares: 0, parcels: 0, crimes: 0, shots: 0 },
@@ -62,6 +71,7 @@ function freshPlayer(x, y) {
     id: 0, kind: 'player', x, y, r: 10, angle: -Math.PI / 2, speed: 0,
     hp: 100, car: null, moving: false,
     weapon: 'fist', hasPistol: false, mag: 0, ammo: 0, reloading: 0, atkT: 0,
+    hasSMG: false, smgMag: 0, smgAmmo: 0, armor: 0,
     shirt: '#12b5a5', pants: '#2e3440', skin: '#c68863', state: 'walk',
   };
 }
@@ -110,6 +120,39 @@ game.spawnMarkedCar = () => {
   game.markedCar = game.spawnCar('sports', spot.x, spot.y, Math.PI / 2, { parked: true, marked: true, color: '#c22e3e' });
 };
 
+game.spawnRepoCar = () => {
+  const lot = game.city.parkedSpots.filter((s) => s.angle === Math.PI / 2);
+  const spot = lot[Math.floor(lot.length / 3)] ?? { x: 2400, y: 800 };
+  for (const car of game.cars) {
+    if ((car.x - spot.x) ** 2 + (car.y - spot.y) ** 2 < 60 * 60) car.dead = true;
+  }
+  const car = game.spawnCar('sedan', spot.x, spot.y, Math.PI / 2, { parked: true, marked: true, color: '#3a5a7a' });
+  game.repoCar = car;
+  game.markedCar = car; // shares the minimap dot and fail-cleanup with story targets
+  return car;
+};
+
+game.spawnGuards = (x, y) => {
+  for (const [ox, oy] of [[-46, 20], [52, -14]]) {
+    const g = makeThug(x + ox, y + oy);
+    game.peds.push(g);
+  }
+};
+
+game.spawnTarget = () => {
+  const park = game.city.locations.park;
+  const ped = makePed(park.x + rand(-60, 60), park.y + rand(-40, 40));
+  ped.kind = 'target';
+  ped.hp = 45;
+  ped.shirt = '#e8e4da';
+  ped.hat = '#c22e3e';
+  ped.tx = ped.x;
+  ped.ty = ped.y;
+  game.peds.push(ped);
+  game.targetPed = ped;
+  return ped;
+};
+
 game.showBanner = (title, sub) => {
   game.banner = { title, sub, t: 3.4 };
 };
@@ -133,6 +176,12 @@ game.hurtPlayer = (dmg, fromX, fromY) => {
     damageCar(p.car, dmg * 0.7);
     p.hp -= dmg * 0.35;
   } else {
+    // Body armor eats three quarters of what it can still soak.
+    if (p.armor > 0) {
+      const soaked = Math.min(p.armor, dmg * 0.75);
+      p.armor -= soaked;
+      dmg -= soaked;
+    }
     p.hp -= dmg;
   }
   game.camera.shake = Math.max(game.camera.shake, 3);
@@ -154,11 +203,17 @@ game.saveGame = () => {
     seed: game.seed,
     missionIdx: game.mission.idx,
     phase: game.mission.phase === 'done' ? 'done' : 'meet',
+    postIdx: game.mission.postIdx,
+    postPhase: game.mission.postPhase === 'steps' ? 'meet' : game.mission.postPhase,
     x: Math.round(game.player.x),
     y: Math.round(game.player.y),
     hasPistol: game.player.hasPistol,
     mag: game.player.mag,
     ammo: game.player.ammo,
+    hasSMG: game.player.hasSMG,
+    smgMag: game.player.smgMag,
+    smgAmmo: game.player.smgAmmo,
+    armor: Math.round(game.player.armor),
     stats: game.stats,
   });
 };
@@ -174,18 +229,18 @@ function populate() {
     const j = Math.floor(rng.next() * (k + 1));
     [spots[k], spots[j]] = [spots[j], spots[k]];
   }
-  const parkedTypes = ['sedan', 'sedan', 'taxi', 'pickup', 'sedan', 'sports'];
-  for (const s of spots.slice(0, 30)) {
+  const parkedTypes = ['sedan', 'sedan', 'taxi', 'pickup', 'sedan', 'sports', 'moto'];
+  for (const s of spots.slice(0, 36)) {
     game.spawnCar(rng.pick(parkedTypes), s.x, s.y, s.angle, { parked: true });
   }
-  const trafficTypes = ['sedan', 'sedan', 'taxi', 'pickup', 'sedan'];
-  for (let k = 0; k < 12; k += 1) {
+  const trafficTypes = ['sedan', 'sedan', 'taxi', 'pickup', 'sedan', 'moto'];
+  for (let k = 0; k < 18; k += 1) {
     const vx = 200 + Math.floor(rng.next() * 8) * 400;
     const vy = 200 + Math.floor(rng.next() * 6) * 400;
     const horizontal = rng.chance(0.5);
     game.spawnCar(rng.pick(trafficTypes), vx + (horizontal ? 0 : 26), vy + (horizontal ? 26 : 0), horizontal ? 0 : Math.PI / 2, { driver: 'traffic', hasDriver: true });
   }
-  for (let k = 0; k < 42; k += 1) {
+  for (let k = 0; k < 58; k += 1) {
     const p = makePed(0, 0);
     const spot = randomPedSpot();
     p.x = spot.x;
@@ -218,6 +273,14 @@ function newGame(seed) {
   game.skids = [];
   game.pickups = [];
   game.markedCar = null;
+  game.repoCar = null;
+  game.targetPed = null;
+  game.duel = null;
+  game.event = null;
+  game.eventT = 18;
+  game.shopPrompt = null;
+  game.sprayT = 0;
+  game.chatter = null;
   game.side = null;
   game.dialogue = null;
   game.banner = null;
@@ -236,8 +299,13 @@ function continueGame() {
   if (!save) return false;
   newGame(save.seed ?? CITY_SEED);
   game.cash = save.cash;
-  game.mission.idx = clamp(save.missionIdx ?? 0, 0, 5);
-  game.mission.phase = save.phase === 'done' || game.mission.idx >= 5 ? 'done' : 'meet';
+  game.mission.idx = clamp(save.missionIdx ?? 0, 0, MISSIONS.length);
+  game.mission.phase = save.phase === 'done' || game.mission.idx >= MISSIONS.length ? 'done' : 'meet';
+  game.mission.postIdx = clamp(save.postIdx ?? 0, 0, POST_MISSIONS.length);
+  game.mission.postPhase = game.mission.phase !== 'done' || game.mission.postIdx >= POST_MISSIONS.length
+    ? 'done'
+    : (save.postPhase === 'done' ? 'done' : 'meet');
+  if (game.mission.phase !== 'done') game.mission.postPhase = 'meet';
   game.player.x = save.x ?? game.player.x;
   game.player.y = save.y ?? game.player.y;
   game.player.hasPistol = !!save.hasPistol;
@@ -246,6 +314,10 @@ function continueGame() {
     game.player.mag = save.mag ?? 12;
     game.player.ammo = save.ammo ?? 24;
   }
+  game.player.hasSMG = !!save.hasSMG;
+  game.player.smgMag = save.smgMag ?? 0;
+  game.player.smgAmmo = save.smgAmmo ?? 0;
+  game.player.armor = save.armor ?? 0;
   game.stats = { ...game.stats, ...(save.stats ?? {}) };
   game.centerCamera(true);
   return true;
@@ -253,14 +325,25 @@ function continueGame() {
 
 game.centerCamera = (instant) => {
   const p = game.player.car ?? game.player;
-  const tx = clamp(p.x - game.view.w / 2, 0, Math.max(0, WORLD_W - game.view.w));
-  const ty = clamp(p.y - game.view.h / 2, 0, Math.max(0, WORLD_H - game.view.h));
+  // Look where the action is going: lead the target by a slice of the velocity
+  // (capped, so a fast car shows the road ahead without losing itself).
+  let leadX = 0;
+  let leadY = 0;
+  if (game.player.car) {
+    leadX = clamp(game.player.car.vx * 0.42, -120, 120);
+    leadY = clamp(game.player.car.vy * 0.42, -120, 120);
+  } else if (game.player.moving) {
+    leadX = Math.cos(game.player.angle) * 26;
+    leadY = Math.sin(game.player.angle) * 26;
+  }
+  const tx = clamp(p.x + leadX - game.view.w / 2, 0, Math.max(0, WORLD_W - game.view.w));
+  const ty = clamp(p.y + leadY - game.view.h / 2, 0, Math.max(0, WORLD_H - game.view.h));
   if (instant) {
     game.camera.x = tx;
     game.camera.y = ty;
   } else {
-    game.camera.x += (tx - game.camera.x) * 0.12;
-    game.camera.y += (ty - game.camera.y) * 0.12;
+    game.camera.x += (tx - game.camera.x) * 0.09;
+    game.camera.y += (ty - game.camera.y) * 0.09;
   }
 };
 
@@ -335,7 +418,7 @@ function clearHeat() {
   game.wanted.heat = 0;
   game.wanted.stars = 0;
   game.wanted.bustT = 0;
-  for (const car of game.cars) if (car.isPolice) car.dead = true;
+  for (const car of game.cars) if (car.isPolice && car !== game.player.car) car.dead = true;
   game.peds = game.peds.filter((p) => p.kind !== 'officer');
 }
 
@@ -464,6 +547,8 @@ function damagePed(ped, dmg, byPlayer) {
       if (ped.kind === 'officer') {
         commitCrime(30, ped.x, ped.y);
         game.forceStars(2);
+      } else if (ped.kind === 'target') {
+        commitCrime(20, ped.x, ped.y);
       } else if (ped.kind === 'ped') {
         commitCrime(16, ped.x, ped.y);
       }
@@ -475,9 +560,17 @@ function damagePed(ped, dmg, byPlayer) {
   }
 }
 
+const WEAPONS = {
+  pistol: { dmg: 34, rate: 0.24, magSize: 12, reload: 1.1, carDmg: 13 },
+  smg: { dmg: 21, rate: 0.105, magSize: 30, reload: 1.4, carDmg: 8 },
+};
+
 function playerShoot() {
   const p = game.player;
-  p.mag -= 1;
+  const smg = p.weapon === 'smg';
+  const spec = smg ? WEAPONS.smg : WEAPONS.pistol;
+  if (smg) p.smgMag -= 1;
+  else p.mag -= 1;
   game.stats.shots += 1;
   const a = p.angle;
   const x0 = p.x + Math.cos(a) * 14;
@@ -499,7 +592,7 @@ function playerShoot() {
       if ((ped.x - x) ** 2 + (ped.y - y) ** 2 < 12 * 12) {
         hx = x;
         hy = y;
-        damagePed(ped, 34, true);
+        damagePed(ped, spec.dmg, true);
         spawnParticles(x, y, 5, '#e5484d', 60);
         break outer;
       }
@@ -509,7 +602,7 @@ function playerShoot() {
       if ((car.x - x) ** 2 + (car.y - y) ** 2 < (car.r + 3) ** 2) {
         hx = x;
         hy = y;
-        damageCar(car, 13);
+        damageCar(car, spec.carDmg);
         spawnParticles(x, y, 4, '#ffd75e', 70);
         if (car.isPolice) commitCrime(24, car.x, car.y);
         break outer;
@@ -518,13 +611,19 @@ function playerShoot() {
   }
   game.fx.shot(x0, y0, hx, hy);
   commitCrime(7, p.x, p.y);
-  if (p.mag <= 0) startReload();
+  if ((smg ? p.smgMag : p.mag) <= 0) startReload();
 }
 
 function startReload() {
   const p = game.player;
-  if (p.reloading > 0 || p.mag >= 12 || p.ammo <= 0) return;
-  p.reloading = 1.1;
+  if (p.weapon !== 'pistol' && p.weapon !== 'smg') return;
+  const smg = p.weapon === 'smg';
+  const spec = smg ? WEAPONS.smg : WEAPONS.pistol;
+  const mag = smg ? p.smgMag : p.mag;
+  const ammo = smg ? p.smgAmmo : p.ammo;
+  if (p.reloading > 0 || mag >= spec.magSize || ammo <= 0) return;
+  p.reloading = spec.reload;
+  p.reloadWeapon = p.weapon;
   audio.reload();
 }
 
@@ -558,7 +657,7 @@ function nearestEnterableCar() {
   let best = null;
   let bestD = 60 * 60;
   for (const car of game.cars) {
-    if (car.dead || car.driver === 'player') continue;
+    if (car.dead || car.driver === 'player' || car.driver === 'racer') continue;
     const d = (car.x - p.x) ** 2 + (car.y - p.y) ** 2;
     if (d < bestD) {
       bestD = d;
@@ -586,6 +685,7 @@ function enterCar(car) {
   car.hasDriver = false;
   car.parked = false;
   car.route = null;
+  if (car.type === 'moto') car.riderShirt = p.shirt;
   p.car = car;
   p.x = car.x;
   p.y = car.y;
@@ -611,11 +711,22 @@ function updatePlayer(dt) {
   if (p.reloading > 0) {
     p.reloading -= dt;
     if (p.reloading <= 0) {
-      const take = Math.min(12 - p.mag, p.ammo);
-      p.mag += take;
-      p.ammo -= take;
+      const smg = p.reloadWeapon === 'smg';
+      const spec = smg ? WEAPONS.smg : WEAPONS.pistol;
+      if (smg) {
+        const take = Math.min(spec.magSize - p.smgMag, p.smgAmmo);
+        p.smgMag += take;
+        p.smgAmmo -= take;
+      } else {
+        const take = Math.min(spec.magSize - p.mag, p.ammo);
+        p.mag += take;
+        p.ammo -= take;
+      }
     }
   }
+  if (input.hit('1')) p.weapon = 'fist';
+  if (input.hit('2') && p.hasPistol) p.weapon = 'pistol';
+  if (input.hit('3') && p.hasSMG) p.weapon = 'smg';
   const mx = input.mouseX + game.camera.x;
   const my = input.mouseY + game.camera.y;
 
@@ -667,10 +778,11 @@ function updatePlayer(dt) {
   p.y = clamp(p.y, 24, WORLD_H - 24);
 
   if (input.mouseDown && p.atkT <= 0) {
-    if (p.weapon === 'pistol' && p.hasPistol) {
-      if (p.mag > 0 && p.reloading <= 0) playerShoot();
-      else if (p.mag <= 0) startReload();
-      p.atkT = 0.24;
+    if ((p.weapon === 'pistol' && p.hasPistol) || (p.weapon === 'smg' && p.hasSMG)) {
+      const mag = p.weapon === 'smg' ? p.smgMag : p.mag;
+      if (mag > 0 && p.reloading <= 0) playerShoot();
+      else if (mag <= 0) startReload();
+      p.atkT = p.weapon === 'smg' ? WEAPONS.smg.rate : WEAPONS.pistol.rate;
     } else {
       playerPunch();
     }
@@ -680,10 +792,11 @@ function updatePlayer(dt) {
     const car = nearestEnterableCar();
     if (car) enterCar(car);
   }
-  // Ammo pickups are walked over.
+  // Ammo pickups are walked over; they feed whichever gun is in hand.
   for (const pk of game.pickups) {
     if ((pk.x - p.x) ** 2 + (pk.y - p.y) ** 2 < 24 * 24) {
-      p.ammo += pk.amount;
+      if (p.weapon === 'smg' && p.hasSMG) p.smgAmmo += pk.amount;
+      else p.ammo += pk.amount;
       pk.taken = true;
       audio.pickup();
     }
@@ -713,8 +826,22 @@ function maintainAmbient(dt) {
       car.route = null;
     }
   }
+  const trafficCount = game.cars.filter((c) => c.driver === 'traffic' && !c.dead).length;
+  if (trafficCount < 14) {
+    const vx = clamp(Math.round((p.x + rand(-800, 800)) / 400) * 400 + 200, 200, 3000);
+    const vy = clamp(Math.round((p.y + rand(-800, 800)) / 400) * 400 + 200, 200, 2200);
+    const types = ['sedan', 'sedan', 'taxi', 'pickup', 'sedan', 'moto'];
+    game.spawnCar(types[Math.floor(Math.random() * types.length)], vx + 26, vy, Math.PI / 2, { driver: 'traffic', hasDriver: true });
+  }
+  // Two APD patrols work their beats while the city is calm.
+  const patrols = game.cars.filter((c) => c.driver === 'patrol' && !c.dead).length;
+  if (patrols < 2 && game.wanted.stars === 0) {
+    const vx = clamp(Math.round((p.x + rand(-900, 900)) / 400) * 400 + 200, 200, 3000);
+    const vy = clamp(Math.round((p.y + rand(-900, 900)) / 400) * 400 + 200, 200, 2200);
+    game.spawnCar('police', vx, vy + 26, 0, { driver: 'patrol' });
+  }
   const nearPeds = game.peds.filter((q) => q.kind === 'ped' && !q.dead).length;
-  if (nearPeds < 40) {
+  if (nearPeds < 56) {
     const ped = makePed(p.x + rand(-600, 600), p.y + rand(-600, 600));
     const spot = randomPedSpot();
     ped.x = spot.x;
@@ -725,6 +852,201 @@ function maintainAmbient(dt) {
   }
   game.cars = game.cars.filter((c) => !c.dead || c === game.markedCar || c === game.player.car);
   game.peds = game.peds.filter((q) => !q.dead || q.state !== 'down' || Math.random() < 0.9);
+}
+
+// ---------------------------------------------------------------------------
+// Shops: Sal's respray bay (a clean slate for cash) and Iron & Ivory Arms.
+
+const SPRAY_COST = 150;
+const SMG_COST = 600;
+const ARMOR_COST = 300;
+const SMG_AMMO_COST = 120;
+const ARMOR_REPAIR_COST = 150;
+
+function pickCarColor(notColor) {
+  const colors = ['#b8bec9', '#7a4a3a', '#3a5a7a', '#4a7a52', '#8a8f3a', '#6a3a5e', '#c2c7cf', '#37414d', '#94572e', '#2e6f79', '#c22e3e', '#28418c'];
+  let c = colors[Math.floor(Math.random() * colors.length)];
+  if (c === notColor) c = colors[(colors.indexOf(c) + 1) % colors.length];
+  return c;
+}
+
+function updateShops() {
+  const p = game.player;
+  const L = game.city.locations;
+  game.shopPrompt = null;
+  if (game.sprayT > 0) return;
+  if (p.car) {
+    if ((p.car.x - L.garage.x) ** 2 + (p.car.y - L.garage.y) ** 2 < 78 * 78 && Math.abs(p.car.speed) < 24) {
+      game.shopPrompt = { kind: 'spray', text: `F — Respray at Sal's: $${SPRAY_COST}, new color, no stars` };
+      if (input.hit('f')) {
+        if (game.cash >= SPRAY_COST) {
+          game.cash -= SPRAY_COST;
+          p.car.color = pickCarColor(p.car.color);
+          clearHeat();
+          game.sprayT = 1.1;
+          game.showBanner('FRESH PAINT', 'New color, no stars. Sal never saw you.');
+          audio.cash();
+          game.saveGame();
+        } else {
+          game.showBanner('NOT ENOUGH CASH', `Sal wants $${SPRAY_COST} up front`);
+          audio.fail();
+        }
+      }
+    }
+    return;
+  }
+  if ((p.x - L.gunshop.x) ** 2 + (p.y - L.gunshop.y) ** 2 < 52 * 52) {
+    const smgLine = p.hasSMG ? `F — SMG ammo +120 ($${SMG_AMMO_COST})` : `F — Buy the SMG ($${SMG_COST})`;
+    const armorLine = p.armor >= 100 ? 'Armor: full' : `G — Body armor ($${p.armor > 0 ? ARMOR_REPAIR_COST : ARMOR_COST})`;
+    game.shopPrompt = { kind: 'gun', text: `${smgLine}      ${armorLine}` };
+    if (input.hit('f')) {
+      if (!p.hasSMG && game.cash >= SMG_COST) {
+        game.cash -= SMG_COST;
+        p.hasSMG = true;
+        p.smgMag = 30;
+        p.smgAmmo = 90;
+        p.weapon = 'smg';
+        game.showBanner('SMG ACQUIRED', 'Press 3 to draw it · R to reload');
+        audio.cash();
+        game.saveGame();
+      } else if (p.hasSMG && game.cash >= SMG_AMMO_COST) {
+        game.cash -= SMG_AMMO_COST;
+        p.smgAmmo += 120;
+        audio.cash();
+        game.saveGame();
+      } else {
+        game.showBanner('NOT ENOUGH CASH', 'Iron & Ivory does not do credit');
+        audio.fail();
+      }
+    }
+    if (input.hit('g')) {
+      const cost = p.armor > 0 ? ARMOR_REPAIR_COST : ARMOR_COST;
+      if (p.armor >= 100) {
+        game.showBanner('ARMOR IS FULL', 'Come back when it has holes in it');
+      } else if (game.cash >= cost) {
+        game.cash -= cost;
+        p.armor = 100;
+        game.showBanner('ARMORED UP', 'The vest soaks most of what hits you');
+        audio.cash();
+        game.saveGame();
+      } else {
+        game.showBanner('NOT ENOUGH CASH', 'Iron & Ivory does not do credit');
+        audio.fail();
+      }
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Cop radio chatter while a chase is live, and ambient street events.
+
+const CHATTER = [
+  'Dispatch: all units, suspect is {dir}bound through {area}',
+  'Unit 4: in pursuit, requesting backup',
+  'Dispatch: copy that, keep eyes on the suspect',
+  'Unit 2: he is running the lights down the {area} strip',
+  'Dispatch: keep the pressure on, do not let him go dark',
+  'Unit 7: visual lost — no, there he is, {dir}bound',
+  'Dispatch: road units converge, air support is not coming, it is Tuesday',
+];
+
+function updateChatter(dt) {
+  if (game.chatter) {
+    game.chatter.t -= dt;
+    if (game.chatter.t <= 0) game.chatter = null;
+  }
+  if (game.wanted.stars <= 0) return;
+  game.chatterT -= dt;
+  if (game.chatterT > 0) return;
+  game.chatterT = rand(6, 10);
+  const p = game.player;
+  const a = p.car ? p.car.angle : p.angle;
+  const dirs = ['east', 'south-east', 'south', 'south-west', 'west', 'north-west', 'north', 'north-east'];
+  const dir = dirs[Math.round((((a % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)) / (Math.PI / 4)) % 8];
+  const block = game.city.blocks.find((b) => p.x >= b.x - 52 && p.x <= b.x + b.w + 52 && p.y >= b.y - 52 && p.y <= b.y + b.h + 52);
+  const area = block ? block.district : 'the bay';
+  const text = CHATTER[Math.floor(Math.random() * CHATTER.length)].replace('{dir}', dir).replace('{area}', area);
+  game.chatter = { text, t: 4.2 };
+}
+
+function randomPedSpotNear(x, y) {
+  for (let k = 0; k < 10; k += 1) {
+    const spot = randomPedSpot();
+    const d = Math.hypot(spot.x - x, spot.y - y);
+    if (d > 280 && d < 580) return spot;
+  }
+  return null;
+}
+
+function updateAmbientEvents(dt) {
+  const p = game.player;
+  if (!game.event) {
+    game.eventT -= dt;
+    if (game.eventT <= 0) {
+      game.eventT = rand(26, 44);
+      const spot = randomPedSpotNear(p.x, p.y);
+      if (spot) {
+        const victim = makePed(spot.x, spot.y);
+        victim.tx = spot.x;
+        victim.ty = spot.y;
+        victim.eventVictim = true;
+        const mugger = makeThug(spot.x + 17, spot.y + 7);
+        mugger.eventMugger = true;
+        mugger.fireT = 9999;
+        game.peds.push(victim, mugger);
+        game.event = { kind: 'mugging', victim, mugger, t: 55, hitT: 0.5 };
+        game.showBanner('TROUBLE NEARBY', 'Someone is being mugged a few streets over');
+      }
+    }
+    return;
+  }
+  const ev = game.event;
+  if (ev.kind !== 'mugging') {
+    game.event = null;
+    return;
+  }
+  const { victim, mugger } = ev;
+  ev.t -= dt;
+  if (mugger.dead || mugger.state === 'down') {
+    game.addCash(70);
+    game.showBanner('GOOD SAMARITAN', '+$70 — the whole street saw that');
+    audio.cash();
+    if (!victim.dead) {
+      victim.eventVictim = false;
+      victim.state = 'flee';
+      victim.fleeT = 2;
+    }
+    game.event = null;
+    game.saveGame();
+    return;
+  }
+  if (victim.dead || ev.t <= 0) {
+    victim.eventVictim = false;
+    if (!mugger.dead) {
+      mugger.eventMugger = false;
+      mugger.state = 'flee';
+      mugger.fleeT = 3;
+    }
+    game.event = null;
+    return;
+  }
+  // The mugger stays on the victim and works them over; the victim freezes.
+  const d = Math.hypot(victim.x - mugger.x, victim.y - mugger.y);
+  if (d > 24) {
+    mugger.x += ((victim.x - mugger.x) / d) * 120 * dt;
+    mugger.y += ((victim.y - mugger.y) / d) * 120 * dt;
+    mugger.angle = Math.atan2(victim.y - mugger.y, victim.x - mugger.x);
+  }
+  ev.hitT -= dt;
+  if (ev.hitT <= 0) {
+    ev.hitT = 1.15;
+    mugger.angle = Math.atan2(victim.y - mugger.y, victim.x - mugger.x);
+    if (victim.hp > 9) damagePed(victim, 3, false);
+    victim.state = 'walk';
+    victim.tx = victim.x;
+    victim.ty = victim.y;
+    spawnParticles(victim.x, victim.y, 2, '#ffffff', 30);
+  }
 }
 
 function carInteractions(dt) {
@@ -797,6 +1119,14 @@ function update(dt) {
     return;
   }
 
+  // The respray pause: the world holds still while Sal's crew works.
+  if (game.sprayT > 0) {
+    game.sprayT -= dt;
+    game.shopPrompt = null;
+    updateFx(dt);
+    return;
+  }
+
   // Grant the pistol the first time Sal's mission starts.
   if (!game.player.hasPistol && game.mission.idx === 1 && game.mission.phase === 'steps') {
     game.player.hasPistol = true;
@@ -815,6 +1145,9 @@ function update(dt) {
   carInteractions(dt);
   updateWanted(dt);
   updateMissions(game, dt);
+  updateShops();
+  updateChatter(dt);
+  updateAmbientEvents(dt);
   maintainAmbient(dt);
   updateFx(dt);
 

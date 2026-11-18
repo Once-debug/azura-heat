@@ -67,36 +67,60 @@ function lanePoint(a, b) {
   return { x: b.x + (-dy / d) * LANE, y: b.y + (dx / d) * LANE };
 }
 
-export function updateTraffic(game, dt) {
+/** One car cruising the road grid to nowhere in particular; shared by traffic and patrols. */
+export function driveTrafficCar(game, car, dt) {
   const { city, player } = game;
+  if (!car.route || car.routeIdx >= car.route.length) {
+    const dest = { x: 200 + Math.floor(Math.random() * 8) * 400, y: 200 + Math.floor(Math.random() * 6) * 400 };
+    car.route = roadRoute(car.x, car.y, dest.x, dest.y);
+    car.routeIdx = 0;
+  }
+  const node = car.route[car.routeIdx];
+  const target = car.routeIdx + 1 < car.route.length
+    ? lanePoint(node, car.route[car.routeIdx + 1])
+    : { x: node.x, y: node.y };
+  if ((car.x - target.x) ** 2 + (car.y - target.y) ** 2 < 46 * 46) car.routeIdx += 1;
+
+  let control = steerToward(car, target.x, target.y, 0.62, dt);
+  if (obstacleAhead(game, car, 58)) {
+    control = { throttle: 0, steer: control.steer, brake: true, handbrake: false };
+    car.brakeLight = 0.2;
+    car.blockedT = (car.blockedT || 0) + dt;
+    if (car.blockedT > 1.6 && Math.random() < dt * 0.5) {
+      car.blockedT = 0;
+      if (Math.hypot(car.x - player.x, car.y - player.y) < 520) audio.horn();
+    }
+  } else {
+    car.blockedT = 0;
+  }
+  car.brakeLight = Math.max(0, car.brakeLight - dt);
+  updateCarPhysics(city, car, control, dt);
+}
+
+export function updateTraffic(game, dt) {
   for (const car of game.cars) {
     if (car.driver !== 'traffic' || car.dead) continue;
-    if (!car.route || car.routeIdx >= car.route.length) {
-      const dest = { x: 200 + Math.floor(Math.random() * 8) * 400, y: 200 + Math.floor(Math.random() * 6) * 400 };
-      car.route = roadRoute(car.x, car.y, dest.x, dest.y);
-      car.routeIdx = 0;
-    }
-    const node = car.route[car.routeIdx];
-    const target = car.routeIdx + 1 < car.route.length
-      ? lanePoint(node, car.route[car.routeIdx + 1])
-      : { x: node.x, y: node.y };
-    if ((car.x - target.x) ** 2 + (car.y - target.y) ** 2 < 46 * 46) car.routeIdx += 1;
-
-    let control = steerToward(car, target.x, target.y, 0.62, dt);
-    if (obstacleAhead(game, car, 58)) {
-      control = { throttle: 0, steer: control.steer, brake: true, handbrake: false };
-      car.brakeLight = 0.2;
-      car.blockedT = (car.blockedT || 0) + dt;
-      if (car.blockedT > 1.6 && Math.random() < dt * 0.5) {
-        car.blockedT = 0;
-        if (Math.hypot(car.x - player.x, car.y - player.y) < 520) audio.horn();
-      }
-    } else {
-      car.blockedT = 0;
-    }
-    car.brakeLight = Math.max(0, car.brakeLight - dt);
-    updateCarPhysics(city, car, control, dt);
+    driveTrafficCar(game, car, dt);
   }
+}
+
+/** Drive one car straight at a world point (the race opponent's whole brain). */
+export function driveCarToPoint(game, car, tx, ty, cruise, dt) {
+  let control = steerToward(car, tx, ty, cruise, dt);
+  if (obstacleAhead(game, car, 52) && Math.hypot(tx - car.x, ty - car.y) > 130) {
+    control = { throttle: 0.1, steer: control.steer, brake: true, handbrake: false };
+    car.brakeLight = 0.2;
+  }
+  if (Math.abs(car.speed) < 9 && control.throttle > 0) {
+    car.stuckT = (car.stuckT || 0) + dt;
+    if (car.stuckT > 1.1) {
+      control = { throttle: -0.8, steer: -control.steer, brake: false, handbrake: false };
+      if (car.stuckT > 1.9) car.stuckT = 0;
+    }
+  } else {
+    car.stuckT = 0;
+  }
+  updateCarPhysics(game.city, car, control, dt);
 }
 
 export function updatePeds(game, dt) {
@@ -105,6 +129,12 @@ export function updatePeds(game, dt) {
     if (ped.kind !== 'ped' || ped.dead) continue;
     if (ped.state === 'down') {
       ped.speed = 0;
+      continue;
+    }
+    if (ped.eventVictim) {
+      // Frozen with fear while the mugging plays out (main.js runs the scene).
+      ped.state = 'walk';
+      stepWalker(city, ped, ped.tx, ped.ty, 40, dt);
       continue;
     }
     // Danger sense: a recent scare nearby, or a fast car bearing down, sends them running.
@@ -197,6 +227,17 @@ export function updatePolice(game, dt) {
   }
 
   for (const car of cruisers) {
+    if (car.driver === 'player') continue; // a stolen cruiser is the player's problem now
+    // A patrol cruiser just works its beat while the city is calm; the moment
+    // stars appear it joins the chase like any other unit.
+    if (car.driver === 'patrol') {
+      if (stars === 0) {
+        driveTrafficCar(game, car, dt);
+        continue;
+      }
+      car.driver = 'police';
+      car.route = null;
+    }
     const dPlayer = Math.hypot(player.x - car.x, player.y - car.y);
     if (dPlayer > 1250 && stars === 0) {
       car.dead = true; // given up and gone once the heat is fully off
@@ -244,6 +285,7 @@ export function updateThugs(game, dt) {
   const { city, player } = game;
   for (const thug of game.peds) {
     if (thug.kind !== 'thug' || thug.dead || thug.state === 'down') continue;
+    if (thug.eventMugger) continue; // the ambient-event mugger is run by main.js
     const dx = player.x - thug.x;
     const dy = player.y - thug.y;
     const d = Math.hypot(dx, dy) || 1;
