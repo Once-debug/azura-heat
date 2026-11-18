@@ -368,6 +368,37 @@ function drawProp(ctx, p, game) {
   } else if (p.kind === 'bench') {
     ctx.fillStyle = '#6a5138';
     ctx.fillRect(p.x - 9, p.y - 3, 18, 6);
+  } else if (p.kind === 'foodcart') {
+    // A street food cart: steel box, striped canopy, two little wheels.
+    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    ctx.fillRect(p.x - 10, p.y - 3, 24, 13);
+    ctx.fillStyle = '#c8ccd4';
+    ctx.fillRect(p.x - 11, p.y - 6, 22, 12);
+    ctx.strokeStyle = 'rgba(16,18,26,0.5)';
+    ctx.lineWidth = 1.2;
+    ctx.strokeRect(p.x - 11, p.y - 6, 22, 12);
+    ctx.fillStyle = '#e8b62a';
+    ctx.fillRect(p.x - 8, p.y - 3, 16, 4);
+    for (let k = 0; k < 4; k += 1) {
+      ctx.fillStyle = k % 2 === 0 ? '#c23b2e' : '#e8e4da';
+      ctx.fillRect(p.x - 13 + k * 6.5, p.y - 13, 6.5, 5);
+    }
+    ctx.fillStyle = '#22262e';
+    ctx.beginPath();
+    ctx.arc(p.x - 7, p.y + 7, 2.6, 0, Math.PI * 2);
+    ctx.arc(p.x + 7, p.y + 7, 2.6, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (p.kind === 'newsbox') {
+    // A newspaper box: city-blue body, pale masthead, the day's front page.
+    ctx.fillStyle = '#28418c';
+    ctx.fillRect(p.x - 6, p.y - 8, 12, 16);
+    ctx.fillStyle = '#e8ecf2';
+    ctx.fillRect(p.x - 6, p.y - 8, 12, 4);
+    ctx.fillStyle = 'rgba(230,238,250,0.8)';
+    ctx.fillRect(p.x - 4, p.y - 1, 8, 5);
+    ctx.strokeStyle = 'rgba(10,12,20,0.55)';
+    ctx.lineWidth = 1.2;
+    ctx.strokeRect(p.x - 6, p.y - 8, 12, 16);
   }
 }
 
@@ -433,9 +464,163 @@ function drawMotoShape(ctx, car, time) {
   if (car.marked) drawMarkedRing(ctx, car, time);
 }
 
+function drawTruckShape(ctx, car, time) {
+  ctx.save();
+  ctx.translate(car.x, car.y);
+  ctx.rotate(car.angle);
+  const L = car.len;
+  const W = car.wid;
+  ctx.fillStyle = 'rgba(0,0,0,0.3)';
+  rr(ctx, -L / 2 + 3, -W / 2 + 5, L, W, 5);
+  ctx.fill();
+  // Cargo box behind: pale panels with ribs and a rear door seam.
+  ctx.fillStyle = '#b9bec7';
+  rr(ctx, -L / 2, -W / 2, L * 0.62, W, 3);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(20,22,30,0.4)';
+  ctx.lineWidth = 1.4;
+  for (let k = 1; k < 4; k += 1) {
+    ctx.beginPath();
+    ctx.moveTo(-L / 2 + k * L * 0.15, -W / 2 + 2);
+    ctx.lineTo(-L / 2 + k * L * 0.15, W / 2 - 2);
+    ctx.stroke();
+  }
+  ctx.strokeRect(-L / 2 + 2, -W / 2 + 2, 7, W - 4);
+  // Cab in the truck's own colour, glass at its front.
+  ctx.fillStyle = car.color;
+  rr(ctx, L * 0.14, -W / 2, L * 0.36, W, 5);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(8,8,14,0.6)';
+  ctx.lineWidth = 1.5;
+  rr(ctx, L * 0.14, -W / 2, L * 0.36, W, 5);
+  ctx.stroke();
+  ctx.fillStyle = '#1b2635';
+  rr(ctx, L * 0.36, -W * 0.36, L * 0.11, W * 0.72, 2);
+  ctx.fill();
+  ctx.fillStyle = 'rgba(140,190,230,0.35)';
+  ctx.fillRect(L * 0.45, -W * 0.3, 3, W * 0.6);
+  // Wheels: twin axles under the box, one under the cab.
+  ctx.fillStyle = '#14161c';
+  for (const [wx, wy] of [[-L * 0.36, -W / 2 - 1], [-L * 0.2, -W / 2 - 1], [L * 0.32, -W / 2 - 1], [-L * 0.36, W / 2 - 3], [-L * 0.2, W / 2 - 3], [L * 0.32, W / 2 - 3]]) {
+    ctx.fillRect(wx - 5, wy, 10, 4);
+  }
+  ctx.fillStyle = '#ffeeb0';
+  ctx.fillRect(L / 2 - 2, -W * 0.34, 3, 5);
+  ctx.fillRect(L / 2 - 2, W * 0.34 - 5, 3, 5);
+  ctx.fillStyle = car.brakeLight > 0 || car.speed < -1 ? '#ff2d20' : '#7a1710';
+  ctx.fillRect(-L / 2 - 1, -W * 0.34, 3, 5);
+  ctx.fillRect(-L / 2 - 1, W * 0.34 - 5, 3, 5);
+  if (car.health < 45) {
+    ctx.fillStyle = 'rgba(20,20,20,0.35)';
+    ctx.beginPath();
+    ctx.arc(L * 0.3, 0, 6 + (45 - car.health) * 0.1, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+  if (car.marked) drawMarkedRing(ctx, car, time);
+}
+
+function drawBusShape(ctx, car, time) {
+  ctx.save();
+  ctx.translate(car.x, car.y);
+  ctx.rotate(car.angle);
+  const L = car.len;
+  const W = car.wid;
+  ctx.fillStyle = 'rgba(0,0,0,0.3)';
+  rr(ctx, -L / 2 + 3, -W / 2 + 5, L, W, 7);
+  ctx.fill();
+  ctx.fillStyle = car.color;
+  rr(ctx, -L / 2, -W / 2, L, W, 7);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(8,8,14,0.6)';
+  ctx.lineWidth = 1.5;
+  rr(ctx, -L / 2, -W / 2, L, W, 7);
+  ctx.stroke();
+  // The window band: one long glass strip, segmented by pillars.
+  ctx.fillStyle = '#22344c';
+  ctx.fillRect(-L * 0.44, -W * 0.34, L * 0.82, W * 0.68);
+  ctx.fillStyle = 'rgba(150,200,235,0.4)';
+  ctx.fillRect(-L * 0.44, -W * 0.34, L * 0.82, 4);
+  ctx.strokeStyle = 'rgba(10,12,18,0.5)';
+  ctx.lineWidth = 1.4;
+  for (let k = 1; k < 6; k += 1) {
+    ctx.beginPath();
+    ctx.moveTo(-L * 0.44 + k * L * 0.135, -W * 0.34);
+    ctx.lineTo(-L * 0.44 + k * L * 0.135, W * 0.34);
+    ctx.stroke();
+  }
+  // Windshield and the folding door just behind the front wheel.
+  ctx.fillStyle = 'rgba(160,205,240,0.5)';
+  ctx.fillRect(L * 0.42, -W * 0.32, 4, W * 0.64);
+  ctx.strokeStyle = 'rgba(10,12,18,0.45)';
+  ctx.strokeRect(L * 0.24, W * 0.3, L * 0.1, W * 0.18);
+  ctx.fillStyle = '#14161c';
+  for (const [wx, wy] of [[-L * 0.34, -W / 2 - 1], [L * 0.34, -W / 2 - 1], [-L * 0.34, W / 2 - 3], [L * 0.34, W / 2 - 3]]) {
+    ctx.fillRect(wx - 5, wy, 10, 4);
+  }
+  ctx.fillStyle = '#ffeeb0';
+  ctx.fillRect(L / 2 - 2, -W * 0.34, 3, 5);
+  ctx.fillRect(L / 2 - 2, W * 0.34 - 5, 3, 5);
+  ctx.fillStyle = car.brakeLight > 0 || car.speed < -1 ? '#ff2d20' : '#7a1710';
+  ctx.fillRect(-L / 2 - 1, -W * 0.34, 3, 5);
+  ctx.fillRect(-L / 2 - 1, W * 0.34 - 5, 3, 5);
+  if (car.health < 45) {
+    ctx.fillStyle = 'rgba(20,20,20,0.35)';
+    ctx.beginPath();
+    ctx.arc(L * 0.3, 0, 6 + (45 - car.health) * 0.1, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+  if (car.marked) drawMarkedRing(ctx, car, time);
+}
+
+function drawBoatShape(ctx, boat) {
+  ctx.save();
+  ctx.translate(boat.x, boat.y);
+  ctx.rotate(boat.angle);
+  const L = boat.len;
+  const W = boat.wid;
+  ctx.fillStyle = 'rgba(0,0,0,0.3)';
+  rr(ctx, -L / 2 + 3, -W / 2 + 4, L, W, 8);
+  ctx.fill();
+  // Hull: white topsides, a teal stripe, the bow tapering to a point.
+  ctx.fillStyle = '#e8ecf2';
+  ctx.beginPath();
+  ctx.moveTo(-L / 2, -W / 2 + 3);
+  ctx.lineTo(L * 0.16, -W / 2);
+  ctx.quadraticCurveTo(L / 2 + 7, 0, L * 0.16, W / 2);
+  ctx.lineTo(-L / 2, W / 2 - 3);
+  ctx.quadraticCurveTo(-L / 2 - 3, 0, -L / 2, -W / 2 + 3);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(10,14,22,0.5)';
+  ctx.lineWidth = 1.4;
+  ctx.stroke();
+  ctx.fillStyle = '#12b5a5';
+  ctx.fillRect(-L / 2 + 2, -3, L * 0.6, 6);
+  // Cockpit glass, a bench astern, and the outboard block.
+  ctx.fillStyle = '#1b2635';
+  rr(ctx, -2, -W * 0.32, L * 0.24, W * 0.64, 3);
+  ctx.fill();
+  ctx.fillStyle = 'rgba(150,200,235,0.45)';
+  ctx.fillRect(L * 0.17, -W * 0.26, 3, W * 0.52);
+  ctx.fillStyle = '#8a6f45';
+  ctx.fillRect(-L * 0.3, -W * 0.34, 5, W * 0.68);
+  ctx.fillStyle = '#22262e';
+  ctx.fillRect(-L / 2 - 5, -4, 6, 8);
+  ctx.restore();
+}
+
 function drawCarShape(ctx, car, time) {
   if (car.type === 'moto') {
     drawMotoShape(ctx, car, time);
+    return;
+  }
+  if (car.type === 'truck') {
+    drawTruckShape(ctx, car, time);
+    return;
+  }
+  if (car.type === 'bus') {
+    drawBusShape(ctx, car, time);
     return;
   }
   ctx.save();
@@ -650,6 +835,14 @@ function drawMinimap(ctx, game, x, y, w, h) {
     if (c.isPolice && !c.dead) dot(c.x, c.y, Math.sin(game.time * 8) > 0 ? '#ff5040' : '#ff9a8a', 3);
   }
   if (game.markedCar && !game.markedCar.dead) dot(game.markedCar.x, game.markedCar.y, '#40e0ff', 3.4);
+  if (city.locations.safehouse) {
+    const sh = city.locations.safehouse;
+    dot(sh.x, sh.y, game.safehouseOwned ? '#43d17c' : '#ffd75e', 3);
+  }
+  if (city.locations.dockmaster && game.mission && game.mission.dockPhase === 'meet') {
+    dot(city.locations.dockmaster.x, city.locations.dockmaster.y, '#8affc1', 3);
+  }
+  if (game.boat) dot(game.boat.x, game.boat.y, '#e8f4ff', 2.4);
   if (game.targetPed && !game.targetPed.dead) dot(game.targetPed.x, game.targetPed.y, '#ff4030', 3.2);
   if (game.event && game.event.mugger && !game.event.mugger.dead) dot(game.event.mugger.x, game.event.mugger.y, '#ff7040', 2.8);
   if (game.objective) dot(game.objective.x, game.objective.y, '#ffd75e', 3.6 + Math.sin(game.time * 5) * 1);
@@ -952,6 +1145,8 @@ function drawHelp(ctx, game) {
     'Iron & Ivory Arms sells the SMG and body armor — walk up, press F / G.',
     'Motorcycles — light, quick, and gone before the cruisers blink. Steal one and lean.',
     'After the finale, the city keeps offering work. And races. Bring a fast car.',
+    'Pier 9: the Dockmaster hires once you have run two jobs — and a speedboat waits at his pier (E to board; the APD cannot follow on water).',
+    'The Palms safehouse ($2,500, press E at the door) saves your game and kills the heat.',
   ];
   rows.forEach((row, i) => ctx.fillText(row, w / 2, h * 0.32 + i * 32));
   ctx.fillStyle = '#8fa3c8';
@@ -1042,17 +1237,48 @@ export function drawGame(ctx, game) {
     }
   }
 
+  // The Palms safehouse wears its price until the day it is Rook's.
+  if (game.city.locations.safehouse && !game.safehouseOwned && game.screen === 'play') {
+    const s = game.city.locations.safehouse;
+    if (s.x >= vx0 && s.x <= vx1 && s.y >= vy0 && s.y <= vy1) {
+      ctx.strokeStyle = `rgba(255,215,94,${0.55 + Math.sin(game.time * 4) * 0.25})`;
+      ctx.lineWidth = 2.4;
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, 20 + Math.sin(game.time * 4) * 2.4, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.fillStyle = '#ffd75e';
+      ctx.font = 'bold 13px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('FOR SALE · $2,500', s.x, s.y - 30);
+      ctx.textAlign = 'left';
+    }
+  }
+
   for (const car of game.cars) {
     if (car.dead) continue;
     if (car.x < vx0 || car.x > vx1 || car.y < vy0 || car.y > vy1) continue;
     drawCarShape(ctx, car, game.time);
   }
+  if (game.boat && game.boat.x >= vx0 && game.boat.x <= vx1 && game.boat.y >= vy0 && game.boat.y <= vy1) {
+    drawBoatShape(ctx, game.boat);
+    if (game.player.boat) {
+      // Rook at the helm: a torso over the cockpit, hands on the wheel.
+      ctx.fillStyle = '#12b5a5';
+      ctx.beginPath();
+      ctx.arc(game.boat.x, game.boat.y, 6.4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = game.player.skin;
+      ctx.beginPath();
+      ctx.arc(game.boat.x + Math.cos(game.boat.angle) * 2.4, game.boat.y + Math.sin(game.boat.angle) * 2.4, 3.8, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
   for (const ped of game.peds) {
     if (ped.x < vx0 || ped.x > vx1 || ped.y < vy0 || ped.y > vy1) continue;
     drawPerson(ctx, ped, false, game.time);
   }
-  if (!game.player.car) drawPerson(ctx, game.player, true, game.time);
-  else {
+  if (!game.player.car && !game.player.boat) drawPerson(ctx, game.player, true, game.time);
+  else if (game.player.car) {
     // A small marker over the player's own car so it is never lost in traffic.
     const c = game.player.car;
     ctx.fillStyle = '#ffffff';
