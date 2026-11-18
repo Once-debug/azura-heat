@@ -24,6 +24,14 @@ export function districtOf(i, j) {
   return 'residential';
 }
 
+/** Marquee names for the four quarters a driver learns by name (district banner). */
+export const DISTRICT_NAMES = {
+  downtown: 'DOWNTOWN',
+  residential: 'THE PALMS',
+  harbor: 'SOUTH HARBOR',
+  industrial: 'FOUNDRY DISTRICT',
+};
+
 const TOWER_COLORS = [
   ['#3d4a6b', '#54648c'], ['#4a3f63', '#655782'], ['#2f4f5e', '#44707f'],
   ['#5e4632', '#7d5f45'], ['#37474f', '#50636e'], ['#513f56', '#6f5573'],

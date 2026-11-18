@@ -4,7 +4,7 @@
 // time: the title over the bay, a walk downtown, a three-star chase, a mission beat.
 
 import { makeCar } from './entities.js';
-import { MISSIONS } from './missions.js';
+import { MISSIONS, DOCK_MISSIONS } from './missions.js';
 
 function placeTrafficNear(game, x, y, count) {
   const traffic = game.cars.filter((c) => c.driver === 'traffic');
@@ -46,6 +46,17 @@ export function stageShot(game, name) {
     game.objective = { x: L.cafe.x, y: L.cafe.y, text: MISSIONS[0].meetText };
     placeTrafficNear(game, 1000, 600, 4);
     placePedsNear(game, 1060, 668, 5);
+    // One heavy vehicle in frame: the truck/bus traffic sells the city's scale.
+    const big = game.cars.find((c) => c.driver === 'traffic' && (c.type === 'truck' || c.type === 'bus'));
+    if (big) {
+      big.x = 1374;
+      big.y = 850;
+      big.angle = -Math.PI / 2;
+      big.vx = 0;
+      big.vy = 0;
+      big.speed = 0;
+      big.route = null;
+    }
   } else if (name === 'chase') {
     game.screen = 'play';
     const car = makeCar('sports', 1420, 1000, 0, { driver: 'player', color: '#c22e3e' });
@@ -72,14 +83,25 @@ export function stageShot(game, name) {
     game.objective = { x: L.hideout.x, y: L.hideout.y, text: 'Lose the heat — or make a run for the Boathouse' };
   } else if (name === 'mission') {
     game.screen = 'play';
-    game.player.x = L.warehouse.x + 30;
-    game.player.y = L.warehouse.y + 66;
-    game.player.angle = -1.2;
-    game.mission.phase = 'steps';
-    game.objective = { x: L.cafe.x, y: L.cafe.y, text: 'Deliver the package to Cafe Solana' };
-    game.startDialogue(MISSIONS[0].intro.slice(2), null);
-    placeTrafficNear(game, L.warehouse.x, L.warehouse.y + 130, 2);
-    placePedsNear(game, L.warehouse.x, L.warehouse.y + 40, 3);
+    // Pier 9 in one frame: Rook on the plank, the speedboat riding at anchor
+    // in the bay, the Dockmaster's warehouse behind, his first job on the table.
+    game.player.x = 2306;
+    game.player.y = 1564;
+    game.player.angle = 0.5;
+    game.objective = { x: L.dockmaster.x, y: L.dockmaster.y, text: DOCK_MISSIONS[0].meetText };
+    game.startDialogue(DOCK_MISSIONS[0].intro, null);
+    placePedsNear(game, L.warehouse.x + 10, L.warehouse.y + 30, 3);
+    // Foam lapping at the moored hull (a frozen scene never ticks particles).
+    const b = game.boat;
+    if (b) {
+      for (let k = 0; k < 16; k += 1) {
+        const a = (k / 16) * Math.PI * 2;
+        game.particles.push({
+          x: b.x + Math.cos(a) * (26 + (k % 3) * 7), y: b.y + Math.sin(a) * (15 + (k % 3) * 5),
+          vx: 0, vy: 0, life: 1.6, max: 1.6, size: 2 + (k % 4), color: 'rgba(215,238,252,0.8)',
+        });
+      }
+    }
   } else {
     // start: the title screen over a slow look at downtown.
     game.screen = 'title';

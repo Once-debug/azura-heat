@@ -1030,6 +1030,36 @@ function drawBanner(ctx, game) {
   ctx.restore();
 }
 
+function drawDistrictBanner(ctx, game) {
+  const d = game.districtBanner;
+  if (!d || d.t <= 0 || game.screen !== 'play') return;
+  const { w, h } = game.view;
+  const TOTAL = 2.4;
+  const alpha = clamp((TOTAL - d.t) / 0.45, 0, 1) * clamp(d.t / 0.7, 0, 1);
+  if (alpha <= 0) return;
+  const y = h * 0.3 - (1 - alpha) * 10;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.textAlign = 'center';
+  if ('letterSpacing' in ctx) ctx.letterSpacing = '16px';
+  ctx.font = 'bold 44px system-ui, sans-serif';
+  ctx.shadowColor = 'rgba(0,0,0,0.75)';
+  ctx.shadowBlur = 14;
+  ctx.fillStyle = '#f4f7fc';
+  ctx.fillText(d.name, w / 2, y);
+  const tw = ctx.measureText(d.name).width;
+  ctx.shadowBlur = 0;
+  if ('letterSpacing' in ctx) ctx.letterSpacing = '0px';
+  ctx.fillStyle = '#ffd75e';
+  ctx.fillRect(w / 2 - tw / 2, y + 16, tw, 2.5);
+  if ('letterSpacing' in ctx) ctx.letterSpacing = '6px';
+  ctx.font = '12px system-ui, sans-serif';
+  ctx.fillStyle = '#9fb4d8';
+  ctx.fillText('· AZURA BAY ·', w / 2, y + 42);
+  if ('letterSpacing' in ctx) ctx.letterSpacing = '0px';
+  ctx.restore();
+}
+
 function drawDialogue(ctx, game) {
   const d = game.dialogue;
   if (!d) return;
@@ -1254,6 +1284,25 @@ export function drawGame(ctx, game) {
     }
   }
 
+  // Owned, the safehouse keeps a soft green porch-light glow.
+  if (game.city.locations.safehouse && game.safehouseOwned && game.screen === 'play') {
+    const s = game.city.locations.safehouse;
+    if (s.x >= vx0 && s.x <= vx1 && s.y >= vy0 && s.y <= vy1) {
+      const g = ctx.createRadialGradient(s.x, s.y, 4, s.x, s.y, 52);
+      g.addColorStop(0, `rgba(67,209,124,${0.16 + Math.sin(game.time * 2.4) * 0.04})`);
+      g.addColorStop(1, 'rgba(67,209,124,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, 52, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#43d17c';
+      ctx.font = 'bold 12px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('SAFEHOUSE', s.x, s.y - 30);
+      ctx.textAlign = 'left';
+    }
+  }
+
   for (const car of game.cars) {
     if (car.dead) continue;
     if (car.x < vx0 || car.x > vx1 || car.y < vy0 || car.y > vy1) continue;
@@ -1381,6 +1430,7 @@ export function drawGame(ctx, game) {
   }
   drawHUD(ctx, game);
   drawBanner(ctx, game);
+  drawDistrictBanner(ctx, game);
   drawDialogue(ctx, game);
   if (game.sprayT > 0) {
     ctx.fillStyle = 'rgba(6,8,16,0.55)';

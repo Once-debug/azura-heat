@@ -3,7 +3,7 @@
 // and hospital visits, ambient traffic, and the glue between the city (world.js), the
 // people in it (ai.js), the story (missions.js) and the drawing (render.js).
 
-import { buildCity, losBlocked, collideBuildings, collideProps, isWater, WORLD_W, WORLD_H } from './world.js';
+import { buildCity, losBlocked, collideBuildings, collideProps, isWater, DISTRICT_NAMES, WORLD_W, WORLD_H } from './world.js';
 import { makeCar, makePed, makeOfficer, makeThug, updateCarPhysics, collideCarPair, damageCar } from './entities.js';
 import { updateTraffic, updatePeds, updatePolice, updateThugs } from './ai.js';
 import { createMissionState, updateMissions, failMission, MISSIONS, POST_MISSIONS, DOCK_MISSIONS } from './missions.js';
@@ -45,6 +45,9 @@ const game = {
   side: null,
   dialogue: null,
   banner: null,
+  districtName: null,
+  districtSeen: {},
+  districtBanner: null,
   objective: null,
   markedCar: null,
   repoCar: null,
@@ -318,6 +321,9 @@ function newGame(seed) {
   game.side = null;
   game.dialogue = null;
   game.banner = null;
+  game.districtName = null;
+  game.districtSeen = {};
+  game.districtBanner = null;
   game.wanted = { heat: 0, stars: 0, losT: 0, bustT: 0 };
   game.mission = createMissionState();
   game.stats = { missions: 0, stolen: 0, fares: 0, parcels: 0, crimes: 0, shots: 0 };
@@ -536,6 +542,10 @@ function updateFx(dt) {
   if (game.banner) {
     game.banner.t -= dt;
     if (game.banner.t <= 0) game.banner = null;
+  }
+  if (game.districtBanner) {
+    game.districtBanner.t -= dt;
+    if (game.districtBanner.t <= 0) game.districtBanner = null;
   }
   // Smoking wrecks and screeching tires.
   for (const car of game.cars) {
@@ -835,15 +845,32 @@ function updateBoatRide(dt) {
   p.y = b.y;
   p.angle = b.angle;
   p.moving = Math.abs(b.speed) > 12;
-  // The wake: foam astern that breathes out and dies behind her.
+  // The wake: two foam lines streaming off her quarters, a churned centre,
+  // and bubbles that linger in her path after she has passed.
   if (Math.abs(b.speed) > 42) {
-    const sx = b.x - Math.cos(b.angle) * b.len * 0.5;
-    const sy = b.y - Math.sin(b.angle) * b.len * 0.5;
+    const fx = Math.cos(b.angle);
+    const fy = Math.sin(b.angle);
+    const sx = b.x - fx * b.len * 0.5;
+    const sy = b.y - fy * b.len * 0.5;
+    for (const s of [-1, 1]) {
+      game.particles.push({
+        x: sx - fy * s * b.wid * 0.34 + rand(-2, 2), y: sy + fx * s * b.wid * 0.34 + rand(-2, 2),
+        vx: -fx * 22 + rand(-7, 7), vy: -fy * 22 + rand(-7, 7),
+        life: rand(0.9, 1.6), max: 1.6, size: rand(2.5, 5), color: 'rgba(228,243,252,0.9)',
+      });
+    }
     game.particles.push({
       x: sx + rand(-4, 4), y: sy + rand(-4, 4),
-      vx: -Math.cos(b.angle) * 18 + rand(-9, 9), vy: -Math.sin(b.angle) * 18 + rand(-9, 9),
+      vx: -fx * 18 + rand(-9, 9), vy: -fy * 18 + rand(-9, 9),
       life: rand(0.7, 1.3), max: 1.3, size: rand(3, 6.5), color: 'rgba(215,238,252,0.85)',
     });
+    if (Math.random() < 0.55) {
+      game.particles.push({
+        x: sx + rand(-7, 7), y: sy + rand(-7, 7),
+        vx: -fx * 10 + rand(-6, 6), vy: -fy * 10 + rand(-6, 6),
+        life: rand(1.4, 2.3), max: 2.3, size: rand(1.2, 2.6), color: 'rgba(186,224,250,0.75)',
+      });
+    }
     if (game.particles.length > 900) game.particles.splice(0, game.particles.length - 900);
   }
   if (input.hit('e')) exitBoat();
@@ -1125,6 +1152,23 @@ function updateShops() {
 }
 
 // ---------------------------------------------------------------------------
+// District marquee: the first time Rook rolls into a quarter, its name goes
+// up in lights — once per district per run.
+
+function updateDistrict() {
+  const p = game.player;
+  const block = game.city.blocks.find((b) => p.x >= b.x - 52 && p.x <= b.x + b.w + 52 && p.y >= b.y - 52 && p.y <= b.y + b.h + 52);
+  if (!block) return;
+  const name = DISTRICT_NAMES[block.district];
+  if (!name || name === game.districtName) return;
+  game.districtName = name;
+  if (!game.districtSeen[name]) {
+    game.districtSeen[name] = true;
+    game.districtBanner = { name, t: 2.4 };
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Cop radio chatter while a chase is live, and ambient street events.
 
 const CHATTER = [
@@ -1135,6 +1179,10 @@ const CHATTER = [
   'Dispatch: keep the pressure on, do not let him go dark',
   'Unit 7: visual lost — no, there he is, {dir}bound',
   'Dispatch: road units converge, air support is not coming, it is Tuesday',
+  'Unit 9: he just blew through the {area} lights — this one is not stopping',
+  'Dispatch: be advised, suspect is {dir}bound and gaining on us',
+  'Unit 5: I have eyes on him near {area}, moving to cut him off',
+  'Dispatch: all units, keep it tight — no heroics near the crowds',
 ];
 
 function updateChatter(dt) {
@@ -1345,6 +1393,7 @@ function update(dt) {
   updateWanted(dt);
   updateMissions(game, dt);
   updateShops();
+  updateDistrict();
   updateChatter(dt);
   updateAmbientEvents(dt);
   maintainAmbient(dt);
