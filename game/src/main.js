@@ -3,7 +3,7 @@
 // and hospital visits, ambient traffic, and the glue between the city (world.js), the
 // people in it (ai.js), the story (missions.js) and the drawing (render.js).
 
-import { buildCity, losBlocked, collideBuildings, collideProps, isWater, DISTRICT_NAMES, WORLD_W, WORLD_H } from './world.js';
+import { buildCity, losBlocked, collideBuildings, collideProps, isWater, DISTRICT_NAMES, WORLD_W, WORLD_H, PACKAGE_SPOTS } from './world.js';
 import { makeCar, makePed, makeOfficer, makeThug, updateCarPhysics, collideCarPair, damageCar } from './entities.js';
 import { updateTraffic, updatePeds, updatePolice, updateThugs } from './ai.js';
 import { createMissionState, updateMissions, failMission, MISSIONS, POST_MISSIONS, DOCK_MISSIONS } from './missions.js';
@@ -65,7 +65,15 @@ const game = {
   eventT: 18,
   danger: null,
   policeSpawnT: 0,
-  stats: { missions: 0, stolen: 0, fares: 0, parcels: 0, crimes: 0, shots: 0 },
+  stats: { missions: 0, stolen: 0, fares: 0, parcels: 0, crimes: 0, shots: 0, earned: 0, busted: 0, wasted: 0, packages: 0, time: 0 },
+  clout: 0,
+  cloutLevel: 0,
+  cloutIdleT: 0,
+  cloutAccum: 0,
+  packagesFound: [],
+  goldCarSpawned: false,
+  toast: null,
+  showStats: false,
   menuIdx: 0,
   hasSaveFile: false,
   muted: false,
@@ -184,7 +192,50 @@ game.showBanner = (title, sub) => {
 
 game.addCash = (n) => {
   game.cash += n;
+  if (n > 0) game.stats.earned += n;
 };
+
+game.showToast = (text) => {
+  game.toast = { text, t: 2.6 };
+};
+
+// Clout: Azura Bay's real currency. Stunts, filmed crimes and finished jobs
+// raise it; lying low lets it bleed back to the last milestone floor. Each
+// milestone is a sponsor deal that pays cash, and the top one parks a gold
+// supercar at the Palms safehouse.
+const CLOUT_TIERS = [120, 300, 600, 1000];
+const CLOUT_PAYS = [150, 400, 900, 2000];
+game.addClout = (n) => {
+  if (!(n > 0)) return;
+  game.clout += n;
+  game.cloutIdleT = 0;
+  while (game.cloutLevel < CLOUT_TIERS.length && game.clout >= CLOUT_TIERS[game.cloutLevel]) {
+    const pay = CLOUT_PAYS[game.cloutLevel];
+    game.cloutLevel += 1;
+    game.addCash(pay);
+    game.showBanner('SPONSOR DEAL', `The Neon Tide numbers are in: +$${pay}. Azura Bay is watching.`);
+    audio.cash();
+    if (game.cloutLevel >= CLOUT_TIERS.length) game.spawnGoldCar();
+    game.saveGame();
+  }
+};
+
+game.spawnGoldCar = () => {
+  if (game.goldCarSpawned) return;
+  game.goldCarSpawned = true;
+  const sh = game.city.locations.safehouse;
+  if (sh) game.spawnCar('sports', sh.x + 46, sh.y + 14, 0, { parked: true, color: '#f2c230' });
+};
+
+/** Is anyone holding a phone up at this spot right now? */
+function filmingAt(x, y) {
+  for (const ped of game.peds) {
+    if (ped.kind !== 'ped' || ped.state !== 'film' || ped.dead) continue;
+    if ((ped.x - x) ** 2 + (ped.y - y) ** 2 < 320 * 320 && !losBlocked(game.city, x, y, ped.x, ped.y)) return true;
+  }
+  return false;
+}
+game.filmingAt = filmingAt;
 
 game.startDialogue = (dialogueLines, onDone) => {
   game.dialogue = { lines: dialogueLines, idx: 0, onDone };
@@ -245,6 +296,10 @@ game.saveGame = () => {
     smgAmmo: game.player.smgAmmo,
     armor: Math.round(game.player.armor),
     stats: game.stats,
+    clout: Math.round(game.clout),
+    cloutLevel: game.cloutLevel,
+    packages: game.packagesFound.map((f, i) => (f ? i : -1)).filter((i) => i >= 0),
+    goldCar: game.goldCarSpawned,
   });
 };
 
@@ -277,6 +332,14 @@ function populate() {
     p.y = spot.y;
     p.tx = spot.x;
     p.ty = spot.y;
+    game.peds.push(p);
+  }
+  // Festival-goers on the sand: swimsuit-bright, nowhere to be but the beach.
+  for (let k = 0; k < 10; k += 1) {
+    const p = makePed(140 + k * 300 + rand(-70, 70), rand(2282, 2362));
+    p.beach = true;
+    p.tx = p.x;
+    p.ty = p.y;
     game.peds.push(p);
   }
 }
@@ -326,7 +389,15 @@ function newGame(seed) {
   game.districtBanner = null;
   game.wanted = { heat: 0, stars: 0, losT: 0, bustT: 0 };
   game.mission = createMissionState();
-  game.stats = { missions: 0, stolen: 0, fares: 0, parcels: 0, crimes: 0, shots: 0 };
+  game.stats = { missions: 0, stolen: 0, fares: 0, parcels: 0, crimes: 0, shots: 0, earned: 0, busted: 0, wasted: 0, packages: 0, time: 0 };
+  game.clout = 0;
+  game.cloutLevel = 0;
+  game.cloutIdleT = 0;
+  game.cloutAccum = 0;
+  game.packagesFound = PACKAGE_SPOTS.map(() => false);
+  game.goldCarSpawned = false;
+  game.toast = null;
+  game.showStats = false;
   game.cash = 120;
   const L = game.city.locations;
   game.player = freshPlayer(L.hideout.x, L.hideout.y + 16);
@@ -364,6 +435,15 @@ function continueGame() {
   game.player.smgAmmo = save.smgAmmo ?? 0;
   game.player.armor = save.armor ?? 0;
   game.stats = { ...game.stats, ...(save.stats ?? {}) };
+  game.clout = save.clout ?? 0;
+  game.cloutLevel = clamp(save.cloutLevel ?? 0, 0, 4);
+  game.packagesFound = PACKAGE_SPOTS.map(() => false);
+  for (const i of save.packages ?? []) {
+    if (Number.isInteger(i) && i >= 0 && i < PACKAGE_SPOTS.length) game.packagesFound[i] = true;
+  }
+  game.stats.packages = game.packagesFound.filter(Boolean).length;
+  if (game.cloutLevel >= 4) game.spawnGoldCar();
+  else game.goldCarSpawned = !!save.goldCar;
   game.centerCamera(true);
   return true;
 }
@@ -409,8 +489,10 @@ function witnessed(x, y) {
 
 function commitCrime(points, x, y, scare = true) {
   const seen = witnessed(x, y);
-  game.wanted.heat += points * (seen ? 1 : 0.3);
+  const filmed = seen && filmingAt(x, y);
+  game.wanted.heat += points * (seen ? 1 : 0.3) * (filmed ? 1.6 : 1);
   game.stats.crimes += 1;
+  if (filmed) game.addClout(points * 0.6);
   if (scare) game.danger = { x, y, t: game.time };
 }
 
@@ -476,6 +558,7 @@ function clearHeat() {
 }
 
 function wasted() {
+  game.stats.wasted += 1;
   const fee = Math.min(game.cash, Math.max(40, Math.round(game.cash * 0.12)));
   game.cash -= fee;
   const p = game.player;
@@ -496,6 +579,7 @@ function wasted() {
 }
 
 function busted() {
+  game.stats.busted += 1;
   const fine = Math.min(game.cash, Math.max(60, Math.round(game.cash * 0.2)));
   game.cash -= fine;
   const p = game.player;
@@ -546,6 +630,10 @@ function updateFx(dt) {
   if (game.districtBanner) {
     game.districtBanner.t -= dt;
     if (game.districtBanner.t <= 0) game.districtBanner = null;
+  }
+  if (game.toast) {
+    game.toast.t -= dt;
+    if (game.toast.t <= 0) game.toast = null;
   }
   // Smoking wrecks and screeching tires.
   for (const car of game.cars) {
@@ -876,6 +964,66 @@ function updateBoatRide(dt) {
   if (input.hit('e')) exitBoat();
 }
 
+// Stunt driving: ramps throw the player's vehicle into a simple hop (a
+// z-height the renderer offsets by, with a ground shadow left behind), and
+// clean air, long drifts and close passes all feed the clout meter. Only the
+// player's vehicle ever hops — traffic, police and the duel racer stay
+// grounded, so pursuit and race routing never see the third dimension.
+function updateStunts(dt) {
+  const car = game.player.car;
+  if (!car) return;
+  if ((car.z || 0) > 0 || car.vz) {
+    car.vz -= 560 * dt;
+    car.z = (car.z || 0) + car.vz * dt;
+    car.airT = (car.airT || 0) + dt;
+    if (car.z <= 0) {
+      const air = car.airT || 0;
+      car.z = 0;
+      car.vz = 0;
+      car.airT = 0;
+      if (air >= 0.3) {
+        const pts = Math.round(air * 45);
+        game.addClout(pts);
+        game.showBanner('STUNT!', `${air.toFixed(1)}s of air over Azura Bay · +${pts} CLOUT`);
+        audio.cash();
+      }
+    }
+    return;
+  }
+  if (Math.abs(car.speed) > 150) {
+    for (const ramp of game.city.ramps) {
+      if ((car.x - ramp.x) ** 2 + (car.y - ramp.y) ** 2 >= 36 * 36) continue;
+      const heading = Math.cos(car.angle - ramp.angle);
+      if (heading < 0.45) continue;
+      car.vz = clamp(Math.abs(car.speed) * 0.75, 150, 265);
+      car.z = 0.01;
+      car.airT = 0;
+      game.showToast('AIRBORNE!');
+      break;
+    }
+  }
+  // Near misses: threading past traffic at speed, close enough to feel it.
+  if (Math.abs(car.speed) > 200) {
+    for (const other of game.cars) {
+      if (other === car || other.dead || other.driver !== 'traffic') continue;
+      const d2 = (other.x - car.x) ** 2 + (other.y - car.y) ** 2;
+      if (d2 > 34 * 34 && d2 < 58 * 58 && game.time > (other.nearT || 0)) {
+        other.nearT = game.time + 3;
+        game.addClout(8);
+        game.showToast('Near miss · +8 CLOUT');
+      }
+    }
+  }
+  // Long drifts tick clout in quietly.
+  if (car.drift > 52 && Math.abs(car.speed) > 90) {
+    game.cloutAccum += dt * 7;
+    if (game.cloutAccum >= 6) {
+      game.cloutAccum -= 6;
+      game.addClout(6);
+    }
+  }
+}
+
 function updatePlayer(dt) {
   const p = game.player;
   p.atkT = Math.max(0, p.atkT - dt);
@@ -921,6 +1069,7 @@ function updatePlayer(dt) {
     p.y = car.y;
     p.angle = car.angle;
     p.moving = Math.abs(car.speed) > 12;
+    updateStunts(dt);
     if (input.hit('e')) exitCar();
     return;
   }
@@ -986,6 +1135,24 @@ function updatePlayer(dt) {
     }
   }
   game.pickups = game.pickups.filter((pk) => !pk.taken);
+  // Hidden packages: glowing caches tucked all over Azura Bay. Walk one over.
+  for (let i = 0; i < PACKAGE_SPOTS.length; i += 1) {
+    if (game.packagesFound[i]) continue;
+    const spot = PACKAGE_SPOTS[i];
+    if ((spot.x - p.x) ** 2 + (spot.y - p.y) ** 2 < 26 * 26) {
+      game.packagesFound[i] = true;
+      game.stats.packages += 1;
+      game.addCash(100);
+      audio.pickup();
+      if (game.stats.packages >= PACKAGE_SPOTS.length) {
+        game.addCash(1000);
+        game.showBanner('ALL 25 PACKAGES FOUND', 'Every cache in Azura Bay, emptied. +$1,000 completion bonus.');
+      } else {
+        game.showToast(`Hidden package ${game.stats.packages}/25 · +$100`);
+      }
+      game.saveGame();
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1329,6 +1496,14 @@ function carInteractions(dt) {
 
 function update(dt) {
   game.time += dt;
+  if (game.screen === 'play') {
+    game.stats.time += dt;
+    game.cloutIdleT += dt;
+    if (game.cloutIdleT > 6 && game.wanted.stars === 0 && game.clout > 0) {
+      const floor = game.cloutLevel > 0 ? CLOUT_TIERS[game.cloutLevel - 1] : 0;
+      game.clout = Math.max(floor, game.clout - 0.5 * dt);
+    }
+  }
   game.dayT = (Math.sin(game.time * ((Math.PI * 2) / 300)) + 1) / 2;
   if (game.banner) { /* banner timing lives in updateFx */ }
 
@@ -1450,6 +1625,14 @@ function handleMenus() {
     game.muted = !game.muted;
     audio.setMuted(game.muted);
   }
+  if (game.screen === 'play' && game.showStats) {
+    if (input.hit('tab', 'escape')) game.showStats = false;
+    return;
+  }
+  if (game.screen === 'play' && input.hit('tab')) {
+    if (!game.dialogue) game.showStats = true;
+    return;
+  }
   if (game.screen === 'play' && input.hit('escape', 'p')) {
     if (!game.dialogue) game.screen = 'pause';
     return;
@@ -1497,7 +1680,7 @@ function frame(now) {
   if (dt < 0) dt = 0;
   if (!game.frozen) {
     handleMenus();
-    if (game.screen !== 'pause' && game.screen !== 'help') update(dt);
+    if (game.screen !== 'pause' && game.screen !== 'help' && !game.showStats) update(dt);
     else if (game.screen === 'pause') updateFx(0);
   }
   drawGame(ctx, game);

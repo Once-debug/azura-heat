@@ -319,6 +319,7 @@ function completeMission(game, def, chain = 'story') {
   const m = game.mission;
   game.addCash(def.reward);
   game.stats.missions += 1;
+  game.addClout?.(10);
   game.showBanner('MISSION COMPLETE', `${def.title}  +$${def.reward}`);
   game.audio?.missionComplete?.();
   if (chain === 'post') {

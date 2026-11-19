@@ -16,7 +16,7 @@ export class Input {
       const k = e.key.toLowerCase();
       this.keys.add(k);
       this.pressed.add(k);
-      if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' '].includes(k)) e.preventDefault();
+      if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' ', 'tab'].includes(k)) e.preventDefault();
     });
     window.addEventListener('keyup', (e) => {
       this.keys.delete(e.key.toLowerCase());
