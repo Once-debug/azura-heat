@@ -112,6 +112,13 @@ function drawGround(ctx, game) {
       ctx.fillRect(ROAD_X[i] + 8, hy - ROAD_HALF + 5, 384, ROAD_HALF * 2 - 10);
     }
   }
+  // Wet asphalt: while a shower passes (or has just passed) the roads take
+  // a pale sheen, strongest where the sky reflects straight down.
+  if ((game.rainF || 0) > 0.03) {
+    ctx.fillStyle = `rgba(168,200,240,${0.11 * game.rainF})`;
+    for (const vx of ROAD_X) ctx.fillRect(vx - ROAD_HALF, 0, ROAD_HALF * 2, WORLD_H);
+    for (const hy of ROAD_Y) ctx.fillRect(0, hy - ROAD_HALF, WORLD_W, ROAD_HALF * 2);
+  }
   ctx.strokeStyle = 'rgba(232,201,90,0.65)';
   ctx.lineWidth = 3;
   ctx.setLineDash([26, 30]);
@@ -1182,16 +1189,68 @@ function drawMinimap(ctx, game, x, y, w, h) {
     ctx.arc(x + wx * sx, y + wy * sy, r, 0, Math.PI * 2);
     ctx.fill();
   };
+  // Location glyphs, one shape per kind of place (the stats screen carries
+  // the legend): squares for shops, a house for the safehouse, a ring for
+  // Pier 9, triangles for the stage and the stunt ramps.
+  const sq = (wx, wy, color, s) => {
+    ctx.fillStyle = color;
+    ctx.fillRect(x + wx * sx - s / 2, y + wy * sy - s / 2, s, s);
+  };
+  const diamond = (wx, wy, color, s) => {
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(x + wx * sx, y + wy * sy - s / 2);
+    ctx.lineTo(x + wx * sx + s / 2, y + wy * sy);
+    ctx.lineTo(x + wx * sx, y + wy * sy + s / 2);
+    ctx.lineTo(x + wx * sx - s / 2, y + wy * sy);
+    ctx.closePath();
+    ctx.fill();
+  };
+  const tri = (wx, wy, color, s) => {
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(x + wx * sx, y + wy * sy - s / 2);
+    ctx.lineTo(x + wx * sx + s / 2, y + wy * sy + s / 2);
+    ctx.lineTo(x + wx * sx - s / 2, y + wy * sy + s / 2);
+    ctx.closePath();
+    ctx.fill();
+  };
+  const ring = (wx, wy, color, r) => {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.arc(x + wx * sx, y + wy * sy, r, 0, Math.PI * 2);
+    ctx.stroke();
+  };
+  const house = (wx, wy, color, s) => {
+    const cx = x + wx * sx;
+    const cy = y + wy * sy;
+    ctx.fillStyle = color;
+    ctx.fillRect(cx - s / 2, cy - s * 0.1, s, s * 0.6);
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - s * 0.62);
+    ctx.lineTo(cx + s * 0.66, cy - s * 0.08);
+    ctx.lineTo(cx - s * 0.66, cy - s * 0.08);
+    ctx.closePath();
+    ctx.fill();
+  };
   for (const c of game.cars) {
     if (c.isPolice && !c.dead) dot(c.x, c.y, Math.sin(game.time * 8) > 0 ? '#ff5040' : '#ff9a8a', 3);
   }
   if (game.markedCar && !game.markedCar.dead) dot(game.markedCar.x, game.markedCar.y, '#40e0ff', 3.4);
+  if (city.locations.gunshop) sq(city.locations.gunshop.x, city.locations.gunshop.y, '#ff9a3c', 6);
+  if (city.locations.garage) diamond(city.locations.garage.x, city.locations.garage.y, '#ff6ad5', 7);
   if (city.locations.safehouse) {
     const sh = city.locations.safehouse;
-    dot(sh.x, sh.y, game.safehouseOwned ? '#43d17c' : '#ffd75e', 3);
+    house(sh.x, sh.y, game.safehouseOwned ? '#43d17c' : '#ffd75e', 7);
   }
-  if (city.locations.dockmaster && game.mission && game.mission.dockPhase === 'meet') {
-    dot(city.locations.dockmaster.x, city.locations.dockmaster.y, '#8affc1', 3);
+  if (city.locations.dockmaster) {
+    ring(city.locations.dockmaster.x, city.locations.dockmaster.y, '#8affc1', 3.6);
+  }
+  if (city.stage) tri(city.stage.x, city.stage.y, '#ff5484', 7);
+  const ramps = city.ramps || [];
+  for (let i = 0; i < ramps.length; i += 1) {
+    tri(ramps[i].x, ramps[i].y, game.stuntsDone && game.stuntsDone[i] ? '#ffd75e' : '#9aa3b2', 5.5);
   }
   const spots = city.packages || [];
   for (let i = 0; i < spots.length; i += 1) {
@@ -1434,12 +1493,14 @@ function drawStats(ctx, game) {
   const secs = Math.floor((s.time || 0) % 60);
   const tiers = [120, 300, 600, 1000];
   const next = (game.cloutLevel || 0) < tiers.length ? tiers[game.cloutLevel || 0] : 'MAX';
+  const stuntDone = (game.stuntsDone || []).filter(Boolean).length;
   const rows = [
     ['Cash on hand', `$${game.cash}`],
     ['Cash earned (lifetime)', `$${s.earned || 0}`],
     ['CLOUT', `${Math.floor(game.clout || 0)}  ·  sponsor tier ${game.cloutLevel || 0}/4  ·  next at ${next}`],
     ['Missions completed', `${s.missions}`],
     ['Hidden packages', `${s.packages || 0} / 25`],
+    ['Stunt challenges', `${stuntDone} / 6`],
     ['Vehicles stolen', `${s.stolen}`],
     ['Taxi fares / parcels', `${s.fares} / ${s.parcels}`],
     ['Crimes committed', `${s.crimes}`],
@@ -1449,7 +1510,7 @@ function drawStats(ctx, game) {
     ['Time in Azura Bay', `${mins}:${String(secs).padStart(2, '0')}`],
   ];
   const pw = 520;
-  const ph = 118 + rows.length * 27;
+  const ph = 118 + rows.length * 27 + 52;
   const x = w / 2 - pw / 2;
   const y = h / 2 - ph / 2;
   ctx.fillStyle = 'rgba(5,6,14,0.82)';
@@ -1479,6 +1540,25 @@ function drawStats(ctx, game) {
     ctx.font = 'bold 15px system-ui, sans-serif';
     ctx.fillText(row[1], x + pw - 34, ry);
     ctx.font = '15px system-ui, sans-serif';
+  });
+  // Minimap legend: what the little shapes on the map are.
+  const legend = [
+    [['#ff9a3c', '■', 'Guns'], ['#ff6ad5', '◆', 'Spray'], ['#43d17c', '■', 'Safehouse'], ['#8affc1', '◎', 'Pier 9']],
+    [['#ff5484', '▲', 'Stage'], ['#ffd75e', '▲', 'Ramp (gold = beaten)'], ['#8affe6', '●', 'Package'], ['#ffd75e', '●', 'Objective']],
+  ];
+  ctx.font = '12.5px system-ui, sans-serif';
+  legend.forEach((line, li) => {
+    let lx = x + 34;
+    const ly = y + 108 + rows.length * 27 + li * 22;
+    ctx.textAlign = 'left';
+    for (const [color, glyph, label] of line) {
+      ctx.fillStyle = color;
+      ctx.fillText(glyph, lx, ly);
+      lx += ctx.measureText(glyph).width + 5;
+      ctx.fillStyle = '#9fb4d8';
+      ctx.fillText(label, lx, ly);
+      lx += ctx.measureText(label).width + 18;
+    }
   });
   ctx.textAlign = 'center';
   ctx.fillStyle = '#8fa3c8';
@@ -1863,8 +1943,9 @@ export function drawGame(ctx, game) {
   }
   ctx.restore();
 
-  // Dusk: a blue veil whose depth breathes with the day cycle, then the lights.
-  const dark = 0.16 + game.dayT * 0.16;
+  // Dusk: a blue veil whose depth breathes with the day cycle (and deepens
+  // a touch while a rain shower passes), then the lights.
+  const dark = 0.16 + game.dayT * 0.16 + (game.rainF || 0) * 0.05;
   ctx.fillStyle = `rgba(16,18,52,${dark})`;
   ctx.fillRect(0, 0, w, h);
   ctx.save();
@@ -1909,12 +1990,36 @@ export function drawGame(ctx, game) {
   ctx.restore();
   ctx.globalCompositeOperation = 'source-over';
 
+  // Golden hour lays a warm wash over the whole bay while it lasts.
+  if ((game.goldF || 0) > 0.01) {
+    const gg = ctx.createLinearGradient(0, 0, 0, h);
+    gg.addColorStop(0, `rgba(255,146,60,${0.15 * game.goldF})`);
+    gg.addColorStop(1, `rgba(255,84,60,${0.06 * game.goldF})`);
+    ctx.fillStyle = gg;
+    ctx.fillRect(0, 0, w, h);
+  }
+
   // A gentle vignette keeps the eye in the middle of the frame.
   const vg = ctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.42, w / 2, h / 2, Math.max(w, h) * 0.74);
   vg.addColorStop(0, 'rgba(4,4,12,0)');
   vg.addColorStop(1, 'rgba(4,4,12,0.3)');
   ctx.fillStyle = vg;
   ctx.fillRect(0, 0, w, h);
+
+  // Rain: slanted streaks falling through the frame while a shower passes.
+  if (game.rainDrops && game.rainDrops.length) {
+    ctx.save();
+    ctx.translate(-Math.round(cam.x + (cam.shakeX || 0)), -Math.round(cam.y + (cam.shakeY || 0)));
+    ctx.strokeStyle = `rgba(168,202,238,${0.34 + (game.rainF || 0) * 0.22})`;
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    for (const d of game.rainDrops) {
+      ctx.moveTo(d.x, d.y);
+      ctx.lineTo(d.x + d.len * 0.27, d.y - d.len);
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
 
   if (game.screen === 'title') {
     drawTitle(ctx, game);
