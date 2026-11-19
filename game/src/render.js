@@ -171,6 +171,73 @@ function drawGround(ctx, game) {
     if (s.x < vx0 || s.x > vx1 || s.y < vy0 || s.y > vy1) continue;
     ctx.strokeRect(s.x - 14, s.y - 26, 28, 52);
   }
+  // The Neon Tide beach: a pale sand band along the south shore, a darker
+  // wet strip where the bay laps at it, and foam flecks breathing on the edge.
+  const beach = city.beach;
+  if (beach && inView(beach.x, beach.y, beach.w, beach.h)) {
+    ctx.fillStyle = '#d9b878';
+    ctx.fillRect(beach.x, beach.y, beach.w, beach.h);
+    ctx.fillStyle = 'rgba(120,90,40,0.16)';
+    for (let k = 0; k < 46; k += 1) {
+      const px = hash(k * 71.3) * WORLD_W;
+      const py = beach.y + 12 + hash(k * 37.7) * (beach.h - 30);
+      ctx.beginPath();
+      ctx.ellipse(px, py, 16 + hash(k * 13.1) * 26, 5 + hash(k * 7.9) * 6, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.fillStyle = '#b98d54';
+    ctx.fillRect(beach.x, beach.y + beach.h - 26, beach.w, 26);
+    ctx.strokeStyle = 'rgba(240,250,255,0.65)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let k = 0; k < 26; k += 1) {
+      const fx = hash(k * 51.7) * WORLD_W;
+      const fy = beach.y + beach.h - 14 + Math.sin(game.time * 1.3 + k * 1.7) * 5;
+      ctx.moveTo(fx, fy);
+      ctx.lineTo(fx + 22 + hash(k * 3.3) * 26, fy);
+    }
+    ctx.stroke();
+    // The promenade line where the road gives up and the sand takes over.
+    ctx.fillStyle = 'rgba(90,70,40,0.5)';
+    ctx.fillRect(beach.x, beach.y, beach.w, 4);
+  }
+  // Stunt ramps: striped steel wedges, the chevrons pointing the way up.
+  for (const ramp of city.ramps || []) {
+    if (!inView(ramp.x - 46, ramp.y - 46, 92, 92)) continue;
+    ctx.save();
+    ctx.translate(ramp.x, ramp.y);
+    ctx.rotate(ramp.angle);
+    ctx.fillStyle = '#3c414d';
+    ctx.beginPath();
+    ctx.moveTo(-24, -19);
+    ctx.lineTo(24, -19);
+    ctx.lineTo(24, 19);
+    ctx.lineTo(-24, 19);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#59627300';
+    ctx.fillStyle = '#596273';
+    ctx.beginPath();
+    ctx.moveTo(-24, -19);
+    ctx.lineTo(24, 0);
+    ctx.lineTo(-24, 19);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#ffd75e';
+    for (let k = -1; k <= 1; k += 1) {
+      ctx.beginPath();
+      ctx.moveTo(k * 13 - 4, -8);
+      ctx.lineTo(k * 13 + 5, 0);
+      ctx.lineTo(k * 13 - 4, 8);
+      ctx.lineTo(k * 13 - 8, 0);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.strokeStyle = 'rgba(10,12,18,0.6)';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(-24, -19, 48, 38);
+    ctx.restore();
+  }
 }
 
 // How lit the city is this frame, set by drawGame from the day cycle: windows,
@@ -388,6 +455,81 @@ function drawProp(ctx, p, game) {
     ctx.arc(p.x - 7, p.y + 7, 2.6, 0, Math.PI * 2);
     ctx.arc(p.x + 7, p.y + 7, 2.6, 0, Math.PI * 2);
     ctx.fill();
+  } else if (p.kind === 'umbrella') {
+    // A beach umbrella: striped canopy on a tilted pole, shadow pooled under it.
+    ctx.fillStyle = 'rgba(90,60,20,0.25)';
+    ctx.beginPath();
+    ctx.ellipse(p.x + 3, p.y + 5, 17, 10, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#7a6248';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(p.x, p.y + 6);
+    ctx.lineTo(p.x + 2, p.y - 3);
+    ctx.stroke();
+    ctx.fillStyle = p.color || '#ff5484';
+    ctx.beginPath();
+    ctx.arc(p.x + 2, p.y - 4, 15, Math.PI, Math.PI * 2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.55)';
+    ctx.beginPath();
+    ctx.moveTo(p.x + 2, p.y - 19);
+    ctx.arc(p.x + 2, p.y - 4, 15, Math.PI * 1.35, Math.PI * 1.65);
+    ctx.closePath();
+    ctx.fill();
+  } else if (p.kind === 'lounger') {
+    ctx.save();
+    ctx.translate(p.x, p.y);
+    ctx.rotate(p.a || 0);
+    ctx.fillStyle = '#e8e4da';
+    ctx.fillRect(-11, -4, 22, 8);
+    ctx.fillStyle = '#40b8c8';
+    ctx.fillRect(-11, -4, 7, 8);
+    ctx.fillRect(2, -4, 7, 8);
+    ctx.restore();
+  } else if (p.kind === 'towel') {
+    ctx.save();
+    ctx.translate(p.x, p.y);
+    ctx.rotate(p.a || 0);
+    ctx.fillStyle = p.color || '#40e0ff';
+    ctx.fillRect(-9, -6, 18, 12);
+    ctx.fillStyle = 'rgba(255,255,255,0.6)';
+    ctx.fillRect(-9, -2, 18, 3);
+    ctx.restore();
+  } else if (p.kind === 'volley') {
+    // A volleyball net strung between two poles, ball resting in the sand.
+    ctx.strokeStyle = '#e8e4da';
+    ctx.lineWidth = 2.4;
+    ctx.beginPath();
+    ctx.moveTo(p.x - 17, p.y - 10);
+    ctx.lineTo(p.x - 17, p.y + 12);
+    ctx.moveTo(p.x + 17, p.y - 10);
+    ctx.lineTo(p.x + 17, p.y + 12);
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(240,244,248,0.85)';
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    for (let k = 0; k < 4; k += 1) {
+      ctx.moveTo(p.x - 17, p.y - 8 + k * 5);
+      ctx.lineTo(p.x + 17, p.y - 8 + k * 5);
+    }
+    for (let k = 0; k < 6; k += 1) {
+      ctx.moveTo(p.x - 17 + k * 6.8, p.y - 9);
+      ctx.lineTo(p.x - 17 + k * 6.8, p.y + 6);
+    }
+    ctx.stroke();
+    ctx.fillStyle = '#ffd75e';
+    ctx.beginPath();
+    ctx.arc(p.x + 9, p.y + 13, 4, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (p.kind === 'lightpole') {
+    ctx.fillStyle = '#2c303a';
+    ctx.fillRect(p.x - 2, p.y - 5, 4, 10);
+    ctx.fillStyle = '#ffd75e';
+    ctx.beginPath();
+    ctx.arc(p.x, p.y - 6, 2.6, 0, Math.PI * 2);
+    ctx.fill();
   } else if (p.kind === 'newsbox') {
     // A newspaper box: city-blue body, pale masthead, the day's front page.
     ctx.fillStyle = '#28418c';
@@ -399,6 +541,195 @@ function drawProp(ctx, p, game) {
     ctx.strokeStyle = 'rgba(10,12,20,0.55)';
     ctx.lineWidth = 1.2;
     ctx.strokeRect(p.x - 6, p.y - 8, 12, 16);
+  }
+}
+
+const NEON = ['#ff5484', '#40e0ff', '#ffd75e', '#8affc1', '#c792ff'];
+
+/** The Neon Tide dressing: the Pier 9 ferris wheel turning over the bay, the
+ *  festival stage at the west end of the beach with its light beams, and the
+ *  string lights strung along the promenade. Pure spectacle. */
+function drawFestival(ctx, game) {
+  const cam = game.camera;
+  const vx0 = cam.x - 160;
+  const vy0 = cam.y - 220;
+  const vx1 = cam.x + game.view.w + 160;
+  const vy1 = cam.y + game.view.h + 160;
+  const F = game.city.ferris;
+  if (F && F.x >= vx0 && F.x <= vx1 && F.y >= vy0 - 120 && F.y <= vy1) {
+    const baseY = F.y + F.r + 26;
+    // A timber platform on the water's edge, then the A-frame legs.
+    ctx.fillStyle = '#6e5638';
+    ctx.fillRect(F.x - F.r - 26, baseY - 8, (F.r + 26) * 2, 14);
+    ctx.strokeStyle = '#54402a';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(F.x - F.r - 26, baseY - 8, (F.r + 26) * 2, 14);
+    ctx.strokeStyle = '#39415a';
+    ctx.lineWidth = 7;
+    ctx.beginPath();
+    ctx.moveTo(F.x, F.y);
+    ctx.lineTo(F.x - F.r * 0.62, baseY - 6);
+    ctx.moveTo(F.x, F.y);
+    ctx.lineTo(F.x + F.r * 0.62, baseY - 6);
+    ctx.stroke();
+    // The rim, turning slowly; spokes; cabins hanging plumb under their pins.
+    const rot = game.time * 0.14;
+    ctx.save();
+    ctx.shadowColor = 'rgba(255,84,132,0.8)';
+    ctx.shadowBlur = 8 + nightF * 12;
+    ctx.strokeStyle = '#ff5484';
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.arc(F.x, F.y, F.r, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(64,224,255,0.75)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(F.x, F.y, F.r - 9, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+    ctx.strokeStyle = 'rgba(210,220,240,0.55)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let k = 0; k < 8; k += 1) {
+      const a = rot + (k * Math.PI) / 4;
+      ctx.moveTo(F.x, F.y);
+      ctx.lineTo(F.x + Math.cos(a) * F.r, F.y + Math.sin(a) * F.r);
+    }
+    ctx.stroke();
+    for (let k = 0; k < 8; k += 1) {
+      const a = rot + (k * Math.PI) / 4;
+      const px = F.x + Math.cos(a) * F.r;
+      const py = F.y + Math.sin(a) * F.r;
+      ctx.fillStyle = NEON[k % NEON.length];
+      rr(ctx, px - 9, py + 2, 18, 13, 3);
+      ctx.fill();
+      ctx.fillStyle = 'rgba(16,20,32,0.65)';
+      ctx.fillRect(px - 6, py + 5, 12, 4);
+    }
+    // Rim bulbs chasing each other around the wheel.
+    for (let k = 0; k < 16; k += 1) {
+      const a = (k * Math.PI) / 8 + game.time * 0.5;
+      ctx.fillStyle = NEON[(k + Math.floor(game.time * 2)) % NEON.length];
+      ctx.beginPath();
+      ctx.arc(F.x + Math.cos(a) * F.r, F.y + Math.sin(a) * F.r, 3.2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.fillStyle = '#ffd75e';
+    ctx.beginPath();
+    ctx.arc(F.x, F.y, 10, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#10131c';
+    ctx.font = 'bold 11px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('N', F.x, F.y + 4);
+    ctx.textAlign = 'left';
+  }
+  // String lights sagging pole to pole along the promenade.
+  const poles = game.city.props.filter((pr) => pr.kind === 'lightpole');
+  if (poles.length > 1 && poles[0].y >= vy0 && poles[0].y <= vy1) {
+    for (let k = 0; k < poles.length - 1; k += 1) {
+      const a = poles[k];
+      const b = poles[k + 1];
+      if (b.x < vx0 || a.x > vx1) continue;
+      ctx.strokeStyle = 'rgba(20,22,30,0.7)';
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y - 6);
+      ctx.quadraticCurveTo((a.x + b.x) / 2, a.y + 12, b.x, b.y - 6);
+      ctx.stroke();
+      for (let d = 1; d < 8; d += 1) {
+        const t = d / 8;
+        const lx = (1 - t) * (1 - t) * a.x + 2 * (1 - t) * t * ((a.x + b.x) / 2) + t * t * b.x;
+        const ly = (1 - t) * (1 - t) * (a.y - 6) + 2 * (1 - t) * t * (a.y + 12) + t * t * (b.y - 6);
+        ctx.fillStyle = NEON[(k + d) % NEON.length];
+        ctx.beginPath();
+        ctx.arc(lx, ly + 2, 2.4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  }
+  // The festival stage: scaffold, speaker stacks, a glowing backdrop, and
+  // beams that sweep the dusk. The west end of the beach is its floor.
+  const ST = game.city.stage;
+  if (ST && ST.x >= vx0 - 120 && ST.x <= vx1 && ST.y >= vy0 && ST.y <= vy1) {
+    const beamA = 0.1 + nightF * 0.22;
+    for (let k = 0; k < 3; k += 1) {
+      const bx = ST.x - 50 + k * 50;
+      const sway = Math.sin(game.time * 0.7 + k * 2.1) * 60;
+      ctx.fillStyle = `rgba(${k === 0 ? '255,84,132' : k === 1 ? '64,224,255' : '255,215,94'},${beamA})`;
+      ctx.beginPath();
+      ctx.moveTo(bx - 5, ST.y - 58);
+      ctx.lineTo(bx + 5, ST.y - 58);
+      ctx.lineTo(bx + sway + 34, ST.y - 218);
+      ctx.lineTo(bx + sway - 34, ST.y - 218);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.fillStyle = '#22262e';
+    ctx.fillRect(ST.x - 96, ST.y - 30, 192, 46);
+    ctx.fillStyle = '#39415a';
+    ctx.fillRect(ST.x - 96, ST.y - 64, 192, 10);
+    ctx.strokeStyle = '#59637a';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (const sx of [-96, -48, 0, 48, 96]) {
+      ctx.moveTo(ST.x + sx, ST.y - 64);
+      ctx.lineTo(ST.x + sx, ST.y + 16);
+    }
+    ctx.stroke();
+    const grad = ctx.createLinearGradient(ST.x, ST.y - 54, ST.x, ST.y - 12);
+    grad.addColorStop(0, '#ff5484');
+    grad.addColorStop(1, '#40e0ff');
+    ctx.fillStyle = grad;
+    ctx.fillRect(ST.x - 62, ST.y - 52, 124, 38);
+    ctx.fillStyle = 'rgba(10,10,20,0.85)';
+    ctx.font = 'bold 17px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('NEON TIDE', ST.x, ST.y - 28);
+    ctx.textAlign = 'left';
+    for (const sx of [-118, 104]) {
+      ctx.fillStyle = '#14161c';
+      ctx.fillRect(ST.x + sx, ST.y - 48, 26, 62);
+      ctx.fillStyle = '#2c303a';
+      for (let k = 0; k < 3; k += 1) {
+        ctx.beginPath();
+        ctx.arc(ST.x + sx + 13, ST.y - 36 + k * 20, 8, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    ctx.fillStyle = '#ffd75e';
+    ctx.font = 'bold 12px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('★ NEON TIDE FESTIVAL ★', ST.x, ST.y + 34);
+    ctx.textAlign = 'left';
+  }
+}
+
+/** Hidden packages glow where they wait: a turning diamond in a halo. */
+function drawPackages(ctx, game) {
+  const cam = game.camera;
+  const spots = game.city.packages || [];
+  for (let i = 0; i < spots.length; i += 1) {
+    if (game.packagesFound && game.packagesFound[i]) continue;
+    const s = spots[i];
+    if (s.x < cam.x - 60 || s.y < cam.y - 60 || s.x > cam.x + game.view.w + 60 || s.y > cam.y + game.view.h + 60) continue;
+    const pulse = 0.6 + Math.sin(game.time * 3.4 + i * 1.3) * 0.4;
+    const g = ctx.createRadialGradient(s.x, s.y, 2, s.x, s.y, 26);
+    g.addColorStop(0, `rgba(64,224,255,${0.35 * pulse})`);
+    g.addColorStop(1, 'rgba(64,224,255,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, 26, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.save();
+    ctx.translate(s.x, s.y - 3 + Math.sin(game.time * 2.6 + i) * 2);
+    ctx.rotate(game.time * 1.8 + i);
+    ctx.fillStyle = '#40e0ff';
+    ctx.fillRect(-6, -6, 12, 12);
+    ctx.fillStyle = '#e8fbff';
+    ctx.fillRect(-3, -3, 6, 6);
+    ctx.restore();
   }
 }
 
@@ -773,6 +1104,26 @@ function drawPerson(ctx, p, isPlayer, time) {
     ctx.fillStyle = '#c23b2e';
     ctx.fillRect(p.x - 4, p.y - 6 + bob, 8, 3);
   }
+  if (p.state === 'film') {
+    // Phone held high in both hands, aimed at the show; the red dot blinks.
+    const hx = p.x + Math.cos(p.angle) * 10;
+    const hy = p.y + Math.sin(p.angle) * 10 + bob;
+    ctx.fillStyle = '#101216';
+    ctx.fillRect(hx - 3.4, hy - 5.4, 6.8, 10.8);
+    ctx.fillStyle = '#9fd8f0';
+    ctx.fillRect(hx - 2.2, hy - 4, 4.4, 6.4);
+    if (Math.sin(time * 6) > -0.2) {
+      ctx.fillStyle = '#ff2d20';
+      ctx.beginPath();
+      ctx.arc(hx, hy - 8.6, 2.2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.fillStyle = 'rgba(255,45,32,0.9)';
+    ctx.font = 'bold 8px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('REC', p.x, p.y - 15 + bob);
+    ctx.textAlign = 'left';
+  }
   if (isPlayer) {
     ctx.strokeStyle = 'rgba(255,255,255,0.85)';
     ctx.lineWidth = 1.6;
@@ -842,6 +1193,11 @@ function drawMinimap(ctx, game, x, y, w, h) {
   if (city.locations.dockmaster && game.mission && game.mission.dockPhase === 'meet') {
     dot(city.locations.dockmaster.x, city.locations.dockmaster.y, '#8affc1', 3);
   }
+  const spots = city.packages || [];
+  for (let i = 0; i < spots.length; i += 1) {
+    if (game.packagesFound && game.packagesFound[i]) continue;
+    dot(spots[i].x, spots[i].y, 'rgba(140,255,230,0.75)', 1.7);
+  }
   if (game.boat) dot(game.boat.x, game.boat.y, '#e8f4ff', 2.4);
   if (game.targetPed && !game.targetPed.dead) dot(game.targetPed.x, game.targetPed.y, '#ff4030', 3.2);
   if (game.event && game.event.mugger && !game.event.mugger.dead) dot(game.event.mugger.x, game.event.mugger.y, '#ff7040', 2.8);
@@ -892,6 +1248,41 @@ function drawHUD(ctx, game) {
     ctx.fillStyle = '#9fb4d8';
     ctx.font = '12px system-ui, sans-serif';
     ctx.fillText(`${p.car.type === 'police' ? 'APD cruiser' : p.car.type}  ${Math.round(p.car.health)}%`, 92, 60);
+  }
+  // Clout, under the health box: Azura Bay's fame meter, filling toward the
+  // next sponsor tier, with a REC flag while a bystander's phone is on you.
+  {
+    const tiers = [120, 300, 600, 1000];
+    const lvl = game.cloutLevel || 0;
+    const lo = lvl > 0 ? tiers[lvl - 1] : 0;
+    const hi = lvl < tiers.length ? tiers[lvl] : tiers[tiers.length - 1];
+    const frac = lvl >= tiers.length ? 1 : clamp(((game.clout || 0) - lo) / (hi - lo), 0, 1);
+    ctx.fillStyle = 'rgba(8,10,18,0.55)';
+    rr(ctx, 14, 76, 218, 30, 8);
+    ctx.fill();
+    ctx.fillStyle = '#3a2438';
+    rr(ctx, 62, 90, 112, 8, 4);
+    ctx.fill();
+    const cg = ctx.createLinearGradient(62, 0, 174, 0);
+    cg.addColorStop(0, '#ff5484');
+    cg.addColorStop(1, '#ff9a3c');
+    ctx.fillStyle = cg;
+    if (frac > 0) {
+      rr(ctx, 62, 90, 112 * frac, 8, 4);
+      ctx.fill();
+    }
+    ctx.fillStyle = '#ff9a3c';
+    ctx.font = 'bold 12px system-ui, sans-serif';
+    ctx.fillText('🔥CLOUT', 22, 99);
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 13px system-ui, sans-serif';
+    ctx.fillText(`${Math.floor(game.clout || 0)}`, 182, 99);
+    const filming = game.peds.some((q) => q.kind === 'ped' && q.state === 'film' && !q.dead);
+    if (filming && Math.sin(game.time * 6) > -0.3) {
+      ctx.fillStyle = '#ff2d20';
+      ctx.font = 'bold 11px system-ui, sans-serif';
+      ctx.fillText('● REC', 196, 86);
+    }
   }
   // Wanted stars, top-right.
   for (let k = 0; k < 5; k += 1) {
@@ -1011,6 +1402,91 @@ function drawHUD(ctx, game) {
   }
 }
 
+function drawToast(ctx, game) {
+  const t = game.toast;
+  if (!t || t.t <= 0 || game.screen !== 'play') return;
+  const { w, h } = game.view;
+  const alpha = clamp(t.t / 0.5, 0, 1);
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.font = 'bold 14px system-ui, sans-serif';
+  const text = t.text;
+  const tw = ctx.measureText(text).width + 30;
+  ctx.fillStyle = 'rgba(8,10,18,0.72)';
+  rr(ctx, w / 2 - tw / 2, h - 158, tw, 30, 9);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(64,224,255,0.6)';
+  ctx.lineWidth = 1.4;
+  rr(ctx, w / 2 - tw / 2, h - 158, tw, 30, 9);
+  ctx.stroke();
+  ctx.fillStyle = '#aef4ff';
+  ctx.textAlign = 'center';
+  ctx.fillText(text, w / 2, h - 138);
+  ctx.textAlign = 'left';
+  ctx.restore();
+}
+
+/** The Tab stats screen: Rook's whole career on one card. */
+function drawStats(ctx, game) {
+  const { w, h } = game.view;
+  const s = game.stats;
+  const mins = Math.floor((s.time || 0) / 60);
+  const secs = Math.floor((s.time || 0) % 60);
+  const tiers = [120, 300, 600, 1000];
+  const next = (game.cloutLevel || 0) < tiers.length ? tiers[game.cloutLevel || 0] : 'MAX';
+  const rows = [
+    ['Cash on hand', `$${game.cash}`],
+    ['Cash earned (lifetime)', `$${s.earned || 0}`],
+    ['CLOUT', `${Math.floor(game.clout || 0)}  ·  sponsor tier ${game.cloutLevel || 0}/4  ·  next at ${next}`],
+    ['Missions completed', `${s.missions}`],
+    ['Hidden packages', `${s.packages || 0} / 25`],
+    ['Vehicles stolen', `${s.stolen}`],
+    ['Taxi fares / parcels', `${s.fares} / ${s.parcels}`],
+    ['Crimes committed', `${s.crimes}`],
+    ['Shots fired', `${s.shots}`],
+    ['Times busted', `${s.busted || 0}`],
+    ['Times wasted', `${s.wasted || 0}`],
+    ['Time in Azura Bay', `${mins}:${String(secs).padStart(2, '0')}`],
+  ];
+  const pw = 520;
+  const ph = 118 + rows.length * 27;
+  const x = w / 2 - pw / 2;
+  const y = h / 2 - ph / 2;
+  ctx.fillStyle = 'rgba(5,6,14,0.82)';
+  ctx.fillRect(0, 0, w, h);
+  ctx.fillStyle = 'rgba(10,13,24,0.96)';
+  rr(ctx, x, y, pw, ph, 12);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,84,132,0.65)';
+  ctx.lineWidth = 1.6;
+  rr(ctx, x, y, pw, ph, 12);
+  ctx.stroke();
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#40e0ff';
+  ctx.font = 'bold 27px system-ui, sans-serif';
+  ctx.fillText('ROOK — BY THE NUMBERS', w / 2, y + 42);
+  ctx.fillStyle = '#ff5484';
+  ctx.font = 'bold 12px system-ui, sans-serif';
+  ctx.fillText('— NEON TIDE —', w / 2, y + 64);
+  ctx.font = '15px system-ui, sans-serif';
+  rows.forEach((row, i) => {
+    const ry = y + 98 + i * 27;
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#9fb4d8';
+    ctx.fillText(row[0], x + 34, ry);
+    ctx.textAlign = 'right';
+    ctx.fillStyle = '#f4f7fc';
+    ctx.font = 'bold 15px system-ui, sans-serif';
+    ctx.fillText(row[1], x + pw - 34, ry);
+    ctx.font = '15px system-ui, sans-serif';
+  });
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#8fa3c8';
+  ctx.font = '13px system-ui';
+  ctx.fillText('Tab / Esc — back to the streets', w / 2, y + ph - 14);
+  ctx.textAlign = 'left';
+}
+
 function drawBanner(ctx, game) {
   const b = game.banner;
   if (!b || b.t <= 0) return;
@@ -1122,12 +1598,15 @@ function drawTitle(ctx, game) {
   ctx.shadowColor = 'rgba(255,84,132,0.65)';
   ctx.fillText('HEAT', w / 2, h * 0.3 + 88);
   ctx.shadowBlur = 0;
+  ctx.fillStyle = '#ffd75e';
+  ctx.font = 'bold 19px system-ui, sans-serif';
+  ctx.fillText('— NEON TIDE —', w / 2, h * 0.3 + 124);
   ctx.fillStyle = '#e8ecf4';
   ctx.font = '17px system-ui, sans-serif';
-  ctx.fillText('Rook drove into Azura Bay with a hundred dollars and a past. The city provides the rest.', w / 2, h * 0.3 + 132);
+  ctx.fillText('Rook drove into Azura Bay with a hundred dollars and a past. The festival provides the rest — and the cameras.', w / 2, h * 0.3 + 152);
   ctx.font = '13px system-ui, sans-serif';
   ctx.fillStyle = '#8fa3c8';
-  ctx.fillText("Work for Vera and Sal · spend it at Iron & Ivory Arms · lose the heat in Sal's respray bay", w / 2, h * 0.3 + 158);
+  ctx.fillText("Work for Vera and Sal · chase clout, dodge the APD · lose the heat in Sal's respray bay", w / 2, h * 0.3 + 178);
   ctx.font = '17px system-ui, sans-serif';
   ctx.fillStyle = '#e8ecf4';
   const items = game.hasSaveFile ? ['NEW GAME', 'CONTINUE', 'HOW TO PLAY'] : ['NEW GAME', 'HOW TO PLAY'];
@@ -1147,7 +1626,7 @@ function drawTitle(ctx, game) {
   });
   ctx.font = '13px system-ui, sans-serif';
   ctx.fillStyle = '#8fa3c8';
-  ctx.fillText('WASD drive · mouse aim · E enter car · 1/2/3 weapons · F shop · Esc pause', w / 2, h - 30);
+  ctx.fillText('WASD drive · mouse aim · E enter car · 1/2/3 weapons · F shop · Tab stats · Esc pause', w / 2, h - 30);
   ctx.textAlign = 'left';
 }
 
@@ -1175,13 +1654,15 @@ function drawHelp(ctx, game) {
     'Iron & Ivory Arms sells the SMG and body armor — walk up, press F / G.',
     'Motorcycles — light, quick, and gone before the cruisers blink. Steal one and lean.',
     'After the finale, the city keeps offering work. And races. Bring a fast car.',
+    'CLOUT: stunts, drifts and filmed crimes make Rook famous — sponsors pay at 120 / 300 / 600 / 1000. Bystanders film crimes: hotter, but famous.',
+    'Hit the striped ramps fast for air. Find all 25 glowing packages. The Neon Tide beach and its ferris wheel are pure spectacle — enjoy them.',
     'Pier 9: the Dockmaster hires once you have run two jobs — and a speedboat waits at his pier (E to board; the APD cannot follow on water).',
     'The Palms safehouse ($2,500, press E at the door) saves your game and kills the heat.',
   ];
-  rows.forEach((row, i) => ctx.fillText(row, w / 2, h * 0.32 + i * 32));
+  rows.forEach((row, i) => ctx.fillText(row, w / 2, h * 0.3 + i * 29));
   ctx.fillStyle = '#8fa3c8';
   ctx.font = '14px system-ui';
-  ctx.fillText('Press Esc to go back', w / 2, h * 0.32 + rows.length * 32 + 26);
+  ctx.fillText('Press Esc to go back', w / 2, h * 0.3 + rows.length * 29 + 24);
   ctx.textAlign = 'left';
 }
 
@@ -1234,6 +1715,8 @@ export function drawGame(ctx, game) {
     if (p.x < vx0 || p.x > vx1 || p.y < vy0 || p.y > vy1) continue;
     drawProp(ctx, p, game);
   }
+  drawFestival(ctx, game);
+  drawPackages(ctx, game);
 
   // Objective beacon: a column of gold light on the target.
   if (game.objective && game.screen === 'play') {
@@ -1306,7 +1789,20 @@ export function drawGame(ctx, game) {
   for (const car of game.cars) {
     if (car.dead) continue;
     if (car.x < vx0 || car.x > vx1 || car.y < vy0 || car.y > vy1) continue;
-    drawCarShape(ctx, car, game.time);
+    if (car.z > 0) {
+      // Airborne: the shadow stays on the ground and shrinks as she climbs.
+      const sh = clamp(1 - car.z / 260, 0.45, 1);
+      ctx.fillStyle = `rgba(0,0,0,${0.32 * sh})`;
+      ctx.beginPath();
+      ctx.ellipse(car.x, car.y + 4, car.len * 0.5 * sh, car.wid * 0.62 * sh, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.save();
+      ctx.translate(0, -car.z);
+      drawCarShape(ctx, car, game.time);
+      ctx.restore();
+    } else {
+      drawCarShape(ctx, car, game.time);
+    }
   }
   if (game.boat && game.boat.x >= vx0 && game.boat.x <= vx1 && game.boat.y >= vy0 && game.boat.y <= vy1) {
     drawBoatShape(ctx, game.boat);
@@ -1429,7 +1925,9 @@ export function drawGame(ctx, game) {
     return;
   }
   drawHUD(ctx, game);
+  drawToast(ctx, game);
   drawBanner(ctx, game);
+  if (game.showStats && game.screen === 'play') drawStats(ctx, game);
   drawDistrictBanner(ctx, game);
   drawDialogue(ctx, game);
   if (game.sprayT > 0) {
@@ -1456,7 +1954,8 @@ export function drawGame(ctx, game) {
     ctx.font = '17px system-ui';
     const s = game.stats;
     ctx.fillText(`Cash $${game.cash} · Missions ${s.missions} · Cars stolen ${s.stolen} · Fares ${s.fares} · Parcels ${s.parcels}`, w / 2, h * 0.3 + 48);
-    ctx.fillText('Esc — resume · H — how to play · M — mute', w / 2, h * 0.3 + 84);
+    ctx.fillText(`Clout ${Math.floor(game.clout || 0)} · Packages ${s.packages || 0}/25 · Busted ${s.busted || 0} · Wasted ${s.wasted || 0}`, w / 2, h * 0.3 + 76);
+    ctx.fillText('Esc — resume · H — how to play · M — mute · Tab — full stats (in game)', w / 2, h * 0.3 + 108);
     ctx.textAlign = 'left';
   }
   if (game.screen === 'wasted') drawEndCard(ctx, game, 'WASTED', 'Azura General patched you up. Press E to get back out there.', '#e5484d');

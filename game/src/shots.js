@@ -57,6 +57,41 @@ export function stageShot(game, name) {
       big.speed = 0;
       big.route = null;
     }
+  } else if (name === 'beach') {
+    game.screen = 'play';
+    // The Neon Tide festival beach at dusk: Rook on the sand between the
+    // umbrellas, the stage lit at the west end, a package glowing nearby,
+    // the clout meter already warm. The camera frames stage and shoreline.
+    game.dayT = 0.85;
+    game.time = 14;
+    game.player.x = 716;
+    game.player.y = 2312;
+    game.player.angle = 2.85;
+    game.clout = 132;
+    game.cloutLevel = 1;
+    game.objective = { x: L.cafe.x, y: L.cafe.y, text: 'NEON TIDE is live — the whole beach is watching' };
+    const goers = game.peds.filter((q) => q.kind === 'ped');
+    const spots = [
+      { x: 560, y: 2296 }, { x: 618, y: 2346 }, { x: 806, y: 2288 },
+      { x: 858, y: 2340 }, { x: 486, y: 2338 }, { x: 902, y: 2306 },
+    ];
+    for (let k = 0; k < Math.min(spots.length, goers.length); k += 1) {
+      goers[k].x = spots[k].x;
+      goers[k].y = spots[k].y;
+      goers[k].tx = spots[k].x;
+      goers[k].ty = spots[k].y;
+      goers[k].angle = k % 2 === 0 ? 0.4 : 2.6;
+    }
+    const filmer = goers[spots.length];
+    if (filmer) {
+      filmer.x = 668;
+      filmer.y = 2276;
+      filmer.tx = filmer.x;
+      filmer.ty = filmer.y;
+      filmer.state = 'film';
+      filmer.filmT = 99;
+      filmer.angle = Math.atan2(game.player.y - filmer.y, game.player.x - filmer.x);
+    }
   } else if (name === 'chase') {
     game.screen = 'play';
     const car = makeCar('sports', 1420, 1000, 0, { driver: 'player', color: '#c22e3e' });
@@ -76,6 +111,20 @@ export function stageShot(game, name) {
     }
     game.spawnOfficer(1330, 900);
     game.spawnOfficer(1500, 1090);
+    // A bystander films the chase for the Tide: phone up, REC blinking, and
+    // Rook's clout meter already warm from the show.
+    game.clout = 264;
+    game.cloutLevel = 1;
+    const filmer = game.peds.find((q) => q.kind === 'ped');
+    if (filmer) {
+      filmer.x = 1538;
+      filmer.y = 928;
+      filmer.tx = filmer.x;
+      filmer.ty = filmer.y;
+      filmer.state = 'film';
+      filmer.filmT = 99;
+      filmer.angle = Math.atan2(1000 - filmer.y, 1420 - filmer.x);
+    }
     placeTrafficNear(game, 1400, 1000, 3);
     placePedsNear(game, 1480, 920, 3);
     // Frozen scenes never tick the radio, so set the dispatch line directly.
@@ -83,6 +132,9 @@ export function stageShot(game, name) {
     game.objective = { x: L.hideout.x, y: L.hideout.y, text: 'Lose the heat — or make a run for the Boathouse' };
   } else if (name === 'mission') {
     game.screen = 'play';
+    game.dayT = 0.72;
+    game.clout = 428;
+    game.cloutLevel = 2;
     // Pier 9 in one frame: Rook on the plank, the speedboat riding at anchor
     // in the bay, the Dockmaster's warehouse behind, his first job on the table.
     game.player.x = 2306;
@@ -105,6 +157,7 @@ export function stageShot(game, name) {
   } else {
     // start: the title screen over a slow look at downtown.
     game.screen = 'title';
+    game.dayT = 0.7;
     game.camera.x = 820;
     game.camera.y = 480;
     game.cameraLock = true;
