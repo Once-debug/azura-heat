@@ -39,16 +39,19 @@ export const BEACH = { x: 0, y: 2196, w: WORLD_W, h: WORLD_H - 2196 };
 export const FESTIVAL_STAGE = { x: 330, y: 2332 };
 export const FERRIS = { x: 2500, y: 1372, r: 104 };
 
-/** Stunt ramps: {x, y, angle} — angle is the launch heading. Driving the
+/** Stunt ramps: {x, y, angle, target} — angle is the launch heading and
+ *  target is the airtime (seconds) its stunt challenge asks for. Driving the
  *  player's car or motorcycle over one fast, facing along it, throws the
- *  vehicle into the air (main.js owns the hop). All six sit on open ground. */
+ *  vehicle into the air (main.js owns the hop). All six sit on open ground.
+ *  Targets are calibrated to the hop physics: the fastest car in Azura Bay
+ *  tops out near 0.9s of air, so the series runs 0.58s up to 0.82s. */
 export const RAMPS = [
-  { x: 1000, y: 2050, angle: -Math.PI / 2 },
-  { x: 2400, y: 800, angle: 0 },
-  { x: 2200, y: 1620, angle: Math.PI / 2 },
-  { x: 1500, y: 2296, angle: Math.PI / 2 },
-  { x: 400, y: 1000, angle: 0 },
-  { x: 1800, y: 600, angle: Math.PI },
+  { x: 1000, y: 2050, angle: -Math.PI / 2, target: 0.7 },
+  { x: 2400, y: 800, angle: 0, target: 0.64 },
+  { x: 2200, y: 1620, angle: Math.PI / 2, target: 0.76 },
+  { x: 1500, y: 2296, angle: Math.PI / 2, target: 0.58 },
+  { x: 400, y: 1000, angle: 0, target: 0.68 },
+  { x: 1800, y: 600, angle: Math.PI, target: 0.82 },
 ];
 
 /** The 25 hidden packages: fixed, deterministic, every one reachable on foot

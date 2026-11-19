@@ -3,7 +3,7 @@
 // and hospital visits, ambient traffic, and the glue between the city (world.js), the
 // people in it (ai.js), the story (missions.js) and the drawing (render.js).
 
-import { buildCity, losBlocked, collideBuildings, collideProps, isWater, DISTRICT_NAMES, WORLD_W, WORLD_H, PACKAGE_SPOTS } from './world.js';
+import { buildCity, losBlocked, collideBuildings, collideProps, isWater, DISTRICT_NAMES, WORLD_W, WORLD_H, PACKAGE_SPOTS, RAMPS } from './world.js';
 import { makeCar, makePed, makeOfficer, makeThug, updateCarPhysics, collideCarPair, damageCar } from './entities.js';
 import { updateTraffic, updatePeds, updatePolice, updateThugs } from './ai.js';
 import { createMissionState, updateMissions, failMission, MISSIONS, POST_MISSIONS, DOCK_MISSIONS } from './missions.js';
@@ -72,6 +72,14 @@ const game = {
   cloutAccum: 0,
   packagesFound: [],
   goldCarSpawned: false,
+  stuntsDone: [],
+  rampToastT: [],
+  cycleT: 185,
+  goldF: 0,
+  staged: false,
+  rain: { active: false, t: 0, next: 100 },
+  rainF: 0,
+  rainDrops: [],
   toast: null,
   showStats: false,
   menuIdx: 0,
@@ -300,6 +308,7 @@ game.saveGame = () => {
     cloutLevel: game.cloutLevel,
     packages: game.packagesFound.map((f, i) => (f ? i : -1)).filter((i) => i >= 0),
     goldCar: game.goldCarSpawned,
+    stunts: game.stuntsDone.map((f, i) => (f ? i : -1)).filter((i) => i >= 0),
   });
 };
 
@@ -396,6 +405,13 @@ function newGame(seed) {
   game.cloutAccum = 0;
   game.packagesFound = PACKAGE_SPOTS.map(() => false);
   game.goldCarSpawned = false;
+  game.stuntsDone = RAMPS.map(() => false);
+  game.rampToastT = RAMPS.map(() => 0);
+  game.cycleT = 185;
+  game.goldF = 0;
+  game.rain = { active: false, t: 0, next: 100 };
+  game.rainF = 0;
+  game.rainDrops = [];
   game.toast = null;
   game.showStats = false;
   game.cash = 120;
@@ -442,6 +458,10 @@ function continueGame() {
     if (Number.isInteger(i) && i >= 0 && i < PACKAGE_SPOTS.length) game.packagesFound[i] = true;
   }
   game.stats.packages = game.packagesFound.filter(Boolean).length;
+  game.stuntsDone = RAMPS.map(() => false);
+  for (const i of save.stunts ?? []) {
+    if (Number.isInteger(i) && i >= 0 && i < RAMPS.length) game.stuntsDone[i] = true;
+  }
   if (game.cloutLevel >= 4) game.spawnGoldCar();
   else game.goldCarSpawned = !!save.goldCar;
   game.centerCamera(true);
@@ -969,9 +989,16 @@ function updateBoatRide(dt) {
 // clean air, long drifts and close passes all feed the clout meter. Only the
 // player's vehicle ever hops — traffic, police and the duel racer stay
 // grounded, so pursuit and race routing never see the third dimension.
+const STUNT_PAY = 200;
+const STUNT_CLOUT = 40;
+const STUNT_ALL_BONUS = 1500;
+
 function updateStunts(dt) {
   const car = game.player.car;
   if (!car) return;
+  for (let i = 0; i < game.rampToastT.length; i += 1) {
+    game.rampToastT[i] = Math.max(0, game.rampToastT[i] - dt);
+  }
   if ((car.z || 0) > 0 || car.vz) {
     car.vz -= 560 * dt;
     car.z = (car.z || 0) + car.vz * dt;
@@ -987,17 +1014,48 @@ function updateStunts(dt) {
         game.showBanner('STUNT!', `${air.toFixed(1)}s of air over Azura Bay · +${pts} CLOUT`);
         audio.cash();
       }
+      // A ramp's stunt challenge: the first landing that beats its target
+      // airtime pays out and ticks the series; clearing all six is the
+      // VIRAL COMPILATION. Jumps that miss still keep the clout above.
+      const ri = car.stuntRamp;
+      car.stuntRamp = null;
+      if (ri != null && ri >= 0 && !game.stuntsDone[ri] && air >= (RAMPS[ri]?.target ?? Infinity)) {
+        game.stuntsDone[ri] = true;
+        game.addCash(STUNT_PAY);
+        game.addClout(STUNT_CLOUT);
+        const done = game.stuntsDone.filter(Boolean).length;
+        if (done >= RAMPS.length) {
+          game.addCash(STUNT_ALL_BONUS);
+          game.showBanner('VIRAL COMPILATION', `All six ramps cleared — the edit writes itself. +$${STUNT_PAY} · +$${STUNT_ALL_BONUS} bonus`);
+        } else {
+          game.showBanner('STUNT CHALLENGE COMPLETE', `Ramp ${done}/${RAMPS.length} cleared · +$${STUNT_PAY} · +${STUNT_CLOUT} CLOUT`);
+        }
+        audio.cash();
+        game.saveGame();
+      }
     }
     return;
   }
+  // Rolling up on an unbeaten ramp puts its challenge on the dash.
+  for (let i = 0; i < RAMPS.length; i += 1) {
+    if (game.stuntsDone[i] || game.rampToastT[i] > 0) continue;
+    const ramp = RAMPS[i];
+    if ((car.x - ramp.x) ** 2 + (car.y - ramp.y) ** 2 < 190 * 190) {
+      game.rampToastT[i] = 14;
+      game.showToast(`STUNT CHALLENGE — beat ${ramp.target.toFixed(2)}s in the air`);
+      break;
+    }
+  }
   if (Math.abs(car.speed) > 150) {
-    for (const ramp of game.city.ramps) {
+    for (let i = 0; i < game.city.ramps.length; i += 1) {
+      const ramp = game.city.ramps[i];
       if ((car.x - ramp.x) ** 2 + (car.y - ramp.y) ** 2 >= 36 * 36) continue;
       const heading = Math.cos(car.angle - ramp.angle);
       if (heading < 0.45) continue;
       car.vz = clamp(Math.abs(car.speed) * 0.75, 150, 265);
       car.z = 0.01;
       car.airT = 0;
+      car.stuntRamp = i;
       game.showToast('AIRBORNE!');
       break;
     }
@@ -1492,6 +1550,86 @@ function carInteractions(dt) {
 }
 
 // ---------------------------------------------------------------------------
+// The day cycle and the weather. Free roam runs a slow six-minute cycle —
+// day, golden hour, dusk, night — that drives dayT (the dusk veil and the
+// night factor every light reads) plus goldF (the warm wash of golden
+// hour). Staged screenshot scenes never touch it: stageShot pins dayT and
+// the cycle only advances in unstaged play. Rain is a passing shower on a
+// loose schedule, pure cosmetics: streaks over the frame, a darker veil,
+// a sheen on the asphalt. It never falls on a staged scene.
+
+const CYCLE_LEN = 360;
+// [cycleT, dayT, goldF] keyframes around the six minutes.
+const CYCLE_KEYS = [
+  [0, 0.04, 0], [100, 0.08, 0], [140, 0.3, 0.55], [170, 0.48, 1],
+  [200, 0.68, 0.45], [230, 0.85, 0.1], [300, 0.95, 0], [345, 0.8, 0.15],
+  [360, 0.04, 0],
+];
+
+function applyCycle() {
+  const t = game.cycleT;
+  for (let k = 0; k < CYCLE_KEYS.length - 1; k += 1) {
+    const [t0, d0, g0] = CYCLE_KEYS[k];
+    const [t1, d1, g1] = CYCLE_KEYS[k + 1];
+    if (t < t0 || t > t1) continue;
+    const f = t1 > t0 ? (t - t0) / (t1 - t0) : 0;
+    game.dayT = d0 + (d1 - d0) * f;
+    game.goldF = g0 + (g1 - g0) * f;
+    return;
+  }
+  game.dayT = 0.04;
+  game.goldF = 0;
+}
+
+const RAIN_MAX_DROPS = 130;
+
+function updateRain(dt) {
+  const rain = game.rain;
+  if (game.staged) {
+    rain.active = false;
+    game.rainF = 0;
+    game.rainDrops = [];
+    return;
+  }
+  if (rain.active) {
+    rain.t -= dt;
+    if (rain.t <= 0) {
+      rain.active = false;
+      rain.next = rand(90, 150);
+    }
+  } else {
+    rain.next -= dt;
+    if (rain.next <= 0) {
+      rain.active = true;
+      rain.t = rand(20, 35);
+    }
+  }
+  game.rainF += clamp((rain.active ? 1 : 0) - game.rainF, -dt / 2.2, dt / 2.2);
+  // Drops live in world space around the camera and recycle through the
+  // view while the shower lasts; when it ends they simply fall out.
+  const cam = game.camera;
+  const drops = game.rainDrops;
+  if (rain.active) {
+    while (drops.length < RAIN_MAX_DROPS) {
+      drops.push({
+        x: cam.x + rand(-40, game.view.w + 160),
+        y: cam.y + rand(-game.view.h, game.view.h),
+        len: rand(11, 19),
+      });
+    }
+  }
+  for (const d of drops) {
+    d.x -= 175 * dt;
+    d.y += 645 * dt;
+    if (rain.active && (d.y > cam.y + game.view.h + 30 || d.x < cam.x - 50)) {
+      d.x = cam.x + rand(0, game.view.w + 160);
+      d.y = cam.y - rand(10, 90);
+    }
+  }
+  game.rainDrops = drops.filter((d) => d.y <= cam.y + game.view.h + 40 && d.x >= cam.x - 60);
+}
+
+// ---------------------------------------------------------------------------
 // The loop.
 
 function update(dt) {
@@ -1504,7 +1642,17 @@ function update(dt) {
       game.clout = Math.max(floor, game.clout - 0.5 * dt);
     }
   }
-  game.dayT = (Math.sin(game.time * ((Math.PI * 2) / 300)) + 1) / 2;
+  // The day cycle: play advances it, the title sits at night, and a staged
+  // scene keeps whatever dayT stageShot pinned — the cycle never leaks in.
+  if (!game.staged) {
+    if (game.screen === 'play') {
+      game.cycleT = (game.cycleT + dt) % CYCLE_LEN;
+      applyCycle();
+    } else if (game.screen === 'title' || game.screen === 'help') {
+      game.dayT = 0.7;
+      game.goldF = 0;
+    }
+  }
   if (game.banner) { /* banner timing lives in updateFx */ }
 
   if (game.screen === 'title' || game.screen === 'help') {
@@ -1525,6 +1673,8 @@ function update(dt) {
     return;
   }
   if (game.screen !== 'play') return;
+
+  updateRain(dt);
 
   if (game.dialogue) {
     if (input.hit('e', 'enter') || input.mouseClicked) {
@@ -1663,6 +1813,7 @@ const shotName = params.get('shot');
 const shotSeed = Number.parseInt(params.get('seed') ?? '1', 10) || 1;
 game.hasSaveFile = !!loadSave();
 fitCanvas();
+game.staged = !!shotName;
 newGame(shotName ? shotSeed : CITY_SEED);
 if (shotName) {
   stageShot(game, shotName);
