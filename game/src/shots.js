@@ -64,16 +64,16 @@ export function stageShot(game, name) {
     // the clout meter already warm. The camera frames stage and shoreline.
     game.dayT = 0.85;
     game.time = 14;
-    game.player.x = 716;
-    game.player.y = 2312;
+    game.player.x = 560;
+    game.player.y = 2306;
     game.player.angle = 2.85;
     game.clout = 132;
     game.cloutLevel = 1;
     game.objective = { x: L.cafe.x, y: L.cafe.y, text: 'NEON TIDE is live — the whole beach is watching' };
     const goers = game.peds.filter((q) => q.kind === 'ped');
     const spots = [
-      { x: 560, y: 2296 }, { x: 618, y: 2346 }, { x: 806, y: 2288 },
-      { x: 858, y: 2340 }, { x: 486, y: 2338 }, { x: 902, y: 2306 },
+      { x: 430, y: 2296 }, { x: 486, y: 2346 }, { x: 700, y: 2288 },
+      { x: 756, y: 2340 }, { x: 392, y: 2338 }, { x: 812, y: 2306 },
     ];
     for (let k = 0; k < Math.min(spots.length, goers.length); k += 1) {
       goers[k].x = spots[k].x;
@@ -84,8 +84,8 @@ export function stageShot(game, name) {
     }
     const filmer = goers[spots.length];
     if (filmer) {
-      filmer.x = 668;
-      filmer.y = 2276;
+      filmer.x = 512;
+      filmer.y = 2274;
       filmer.tx = filmer.x;
       filmer.ty = filmer.y;
       filmer.state = 'film';

@@ -35,7 +35,7 @@ export const DISTRICT_NAMES = {
 /** The Neon Tide festival beach: a sand band along the south shore (below the
  *  last east-west road), open ground with no buildings — umbrellas, loungers,
  *  volley nets, the festival stage at its west end, string lights overhead. */
-export const BEACH = { x: 0, y: 2256, w: WORLD_W, h: WORLD_H - 2256 };
+export const BEACH = { x: 0, y: 2196, w: WORLD_W, h: WORLD_H - 2196 };
 export const FESTIVAL_STAGE = { x: 330, y: 2332 };
 export const FERRIS = { x: 2500, y: 1372, r: 104 };
 
@@ -256,9 +256,9 @@ export function buildCity(seed) {
   // poles along the promenade. All pass-through scenery (collideProps only
   // stops on crates, trees and palms), placed from the city seed.
   const beachCols = ['#ff5484', '#40e0ff', '#ffd75e', '#ff8c42', '#8affc1', '#c65b8f'];
-  for (let k = 0; k < 26; k += 1) {
+  for (let k = 0; k < 39; k += 1) {
     const bx = 90 + (k % 13) * 245 + rng.range(-40, 40);
-    const by = 2290 + Math.floor(k / 13) * 62 + rng.range(-12, 12);
+    const by = 2246 + Math.floor(k / 13) * 55 + rng.range(-10, 10);
     city.props.push({ kind: 'umbrella', x: bx, y: by, r: 12, color: beachCols[k % beachCols.length], a: rng.range(0, 3) });
     city.props.push({ kind: 'lounger', x: bx + 17, y: by + 9, r: 7, a: rng.range(-0.5, 0.5) });
     if (k % 2 === 0) city.props.push({ kind: 'towel', x: bx - 18, y: by + 12, r: 6, color: beachCols[(k + 3) % beachCols.length], a: rng.range(0, 3) });
