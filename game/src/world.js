@@ -32,6 +32,38 @@ export const DISTRICT_NAMES = {
   industrial: 'FOUNDRY DISTRICT',
 };
 
+/** The Neon Tide festival beach: a sand band along the south shore (below the
+ *  last east-west road), open ground with no buildings — umbrellas, loungers,
+ *  volley nets, the festival stage at its west end, string lights overhead. */
+export const BEACH = { x: 0, y: 2256, w: WORLD_W, h: WORLD_H - 2256 };
+export const FESTIVAL_STAGE = { x: 330, y: 2332 };
+export const FERRIS = { x: 2500, y: 1372, r: 104 };
+
+/** Stunt ramps: {x, y, angle} — angle is the launch heading. Driving the
+ *  player's car or motorcycle over one fast, facing along it, throws the
+ *  vehicle into the air (main.js owns the hop). All six sit on open ground. */
+export const RAMPS = [
+  { x: 1000, y: 2050, angle: -Math.PI / 2 },
+  { x: 2400, y: 800, angle: 0 },
+  { x: 2200, y: 1620, angle: Math.PI / 2 },
+  { x: 1500, y: 2296, angle: Math.PI / 2 },
+  { x: 400, y: 1000, angle: 0 },
+  { x: 1800, y: 600, angle: Math.PI },
+];
+
+/** The 25 hidden packages: fixed, deterministic, every one reachable on foot
+ *  (roads, sidewalks, the park, the parking lot, piers, the beach). Kept well
+ *  clear of shop/mission interaction points so a pickup is always a choice. */
+export const PACKAGE_SPOTS = [
+  { x: 1500, y: 1120 }, { x: 215, y: 215 }, { x: 2300, y: 750 }, { x: 2450, y: 880 },
+  { x: 2185, y: 1564 }, { x: 2735, y: 1480 }, { x: 500, y: 2315 }, { x: 1500, y: 2340 },
+  { x: 2700, y: 2320 }, { x: 600, y: 1200 }, { x: 1000, y: 470 }, { x: 1000, y: 880 },
+  { x: 1400, y: 880 }, { x: 1800, y: 810 }, { x: 400, y: 1400 }, { x: 1600, y: 2200 },
+  { x: 2600, y: 1210 }, { x: 200, y: 574 }, { x: 615, y: 1015 }, { x: 200, y: 1428 },
+  { x: 2200, y: 1670 }, { x: 615, y: 615 }, { x: 1815, y: 1015 }, { x: 2615, y: 1815 },
+  { x: 350, y: 2290 },
+];
+
 const TOWER_COLORS = [
   ['#3d4a6b', '#54648c'], ['#4a3f63', '#655782'], ['#2f4f5e', '#44707f'],
   ['#5e4632', '#7d5f45'], ['#37474f', '#50636e'], ['#513f56', '#6f5573'],
@@ -122,6 +154,11 @@ export function buildCity(seed) {
     parkedSpots: [],
     locations: {},
     blocks: [],
+    beach: BEACH,
+    ferris: FERRIS,
+    stage: FESTIVAL_STAGE,
+    ramps: RAMPS,
+    packages: PACKAGE_SPOTS,
   };
 
   for (let i = 0; i < ROAD_X.length - 1; i += 1) {
@@ -213,6 +250,24 @@ export function buildCity(seed) {
     if (rng.chance(0.6)) {
       city.parkedSpots.push({ x: b.x + b.w + ROAD_HALF - 18, y: b.y + rng.range(40, 120), angle: Math.PI / 2 });
     }
+  }
+  // The festival beach dresses itself: umbrellas, loungers and towels in
+  // loose rows on the sand, two volley nets, and a line of string-light
+  // poles along the promenade. All pass-through scenery (collideProps only
+  // stops on crates, trees and palms), placed from the city seed.
+  const beachCols = ['#ff5484', '#40e0ff', '#ffd75e', '#ff8c42', '#8affc1', '#c65b8f'];
+  for (let k = 0; k < 26; k += 1) {
+    const bx = 90 + (k % 13) * 245 + rng.range(-40, 40);
+    const by = 2290 + Math.floor(k / 13) * 62 + rng.range(-12, 12);
+    city.props.push({ kind: 'umbrella', x: bx, y: by, r: 12, color: beachCols[k % beachCols.length], a: rng.range(0, 3) });
+    city.props.push({ kind: 'lounger', x: bx + 17, y: by + 9, r: 7, a: rng.range(-0.5, 0.5) });
+    if (k % 2 === 0) city.props.push({ kind: 'towel', x: bx - 18, y: by + 12, r: 6, color: beachCols[(k + 3) % beachCols.length], a: rng.range(0, 3) });
+  }
+  for (const vx of [950, 2150]) {
+    city.props.push({ kind: 'volley', x: vx, y: 2318, r: 16 });
+  }
+  for (let px = 130; px < WORLD_W; px += 232) {
+    city.props.push({ kind: 'lightpole', x: px, y: 2268, r: 4 });
   }
   return city;
 }

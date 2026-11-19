@@ -185,6 +185,21 @@ export function updatePeds(game, dt) {
       stepWalker(city, ped, ped.tx, ped.ty, 40, dt);
       continue;
     }
+    if (ped.state === 'film') {
+      // A filming witness: phone up, feet planted, chasing clout of their own.
+      // They stop the moment the show leaves their sight or their nerve goes.
+      ped.filmT -= dt;
+      ped.speed = 0;
+      ped.angle = Math.atan2(player.y - ped.y, player.x - ped.x);
+      const dFilm = Math.hypot(player.x - ped.x, player.y - ped.y);
+      if (ped.filmT <= 0 || dFilm > 340 || losBlocked(city, ped.x, ped.y, player.x, player.y)) {
+        ped.state = 'flee';
+        ped.fleeT = 1.6;
+        ped.tx = ped.x + (ped.x - player.x);
+        ped.ty = ped.y + (ped.y - player.y);
+      }
+      continue;
+    }
     // Danger sense: a recent scare nearby, or a fast car bearing down, sends them running.
     let fleeX = 0;
     let fleeY = 0;
@@ -211,6 +226,19 @@ export function updatePeds(game, dt) {
         }
       }
     }
+    // Some witnesses do not run: they film. A fresh scare in clear view, and
+    // a bystander with a phone becomes a camera — capped, so a crowd never
+    // turns into a film set (main.js makes filmed crimes hotter and famous).
+    if (fleeing && game.danger && game.time - game.danger.t < 0.6
+      && (ped.x - game.danger.x) ** 2 + (ped.y - game.danger.y) ** 2 < 250 * 250
+      && !losBlocked(city, ped.x, ped.y, game.danger.x, game.danger.y)
+      && game.peds.filter((q) => q.state === 'film').length < 3
+      && Math.random() < 0.4) {
+      ped.state = 'film';
+      ped.filmT = 2.6 + Math.random() * 1.4;
+      ped.speed = 0;
+      continue;
+    }
     if (fleeing) {
       ped.state = 'flee';
       ped.fleeT = 2.2;
@@ -228,6 +256,15 @@ export function updatePeds(game, dt) {
       const p = randomSidewalkPoint(game.rng, city);
       ped.tx = p.x;
       ped.ty = p.y;
+    }
+    if (ped.beach) {
+      // Beachgoers keep to the sand: slow wanders between the umbrellas.
+      const leftB = stepWalker(city, ped, ped.tx, ped.ty, 44, dt);
+      if (leftB <= 2) {
+        ped.tx = Math.min(3140, Math.max(60, ped.x + (Math.random() - 0.5) * 620));
+        ped.ty = 2278 + Math.random() * 92;
+      }
+      continue;
     }
     const left = stepWalker(city, ped, ped.tx, ped.ty, 62, dt);
     if (left <= 2) {
