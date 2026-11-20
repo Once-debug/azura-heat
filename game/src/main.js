@@ -12,7 +12,7 @@ import { stageShot } from './shots.js';
 import { Input } from './input.js';
 import { audio } from './audio.js';
 import { loadSave, writeSave, clearSave } from './save.js';
-import { Rng, clamp, rand } from './rng.js';
+import { Rng, clamp, rand, pick } from './rng.js';
 
 const CITY_SEED = 7;
 const STAR_HEAT = [0, 15, 35, 60, 90, 125];
@@ -38,6 +38,8 @@ const game = {
   particles: [],
   tracers: [],
   skids: [],
+  blasts: [],
+  hurtFx: { t: 0, mag: 0, ang: 0 },
   pickups: [],
   cash: 120,
   wanted: { heat: 0, stars: 0, losT: 0, bustT: 0 },
@@ -272,6 +274,13 @@ game.hurtPlayer = (dmg, fromX, fromY) => {
   }
   game.camera.shake = Math.max(game.camera.shake, 3);
   spawnParticles(p.x, p.y, 4, '#e5484d', 60);
+  // The renderer turns this into a red edge-flash plus a wedge pointing back
+  // at whoever landed the hit, so incoming fire is readable at a glance.
+  game.hurtFx = {
+    t: 1,
+    mag: clamp(dmg / 26, 0.35, 1),
+    ang: Math.atan2(fromY - p.y, fromX - p.x),
+  };
   if (p.hp <= 0) wasted();
 };
 
@@ -373,6 +382,8 @@ function newGame(seed) {
   game.particles = [];
   game.tracers = [];
   game.skids = [];
+  game.blasts = [];
+  game.hurtFx = { t: 0, mag: 0, ang: 0 };
   game.pickups = [];
   game.markedCar = null;
   game.repoCar = null;
@@ -632,6 +643,76 @@ function spawnParticles(x, y, n, color, speed) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Fire and aftermath: a car beaten to zero health burns for a beat, then
+// explodes — and the blast can start the next fire over.
+
+function explodeCar(car) {
+  car.wrecked = true;
+  car.burnT = undefined;
+  car.vx = 0;
+  car.vy = 0;
+  car.speed = 0;
+  const p = game.player;
+  const wasPlayerCar = p.car === car;
+
+  // A traffic driver bails and runs; Rook is thrown clear of his own wreck.
+  if (car.hasDriver && car.driver === 'traffic') {
+    const driver = makePed(car.x + rand(-16, 16), car.y + rand(-16, 16));
+    driver.state = 'flee';
+    driver.fleeT = 3;
+    game.peds.push(driver);
+  }
+  if (car.driver !== 'player') {
+    car.driver = null;
+    car.hasDriver = false;
+  }
+  car.parked = true;
+
+  game.blasts.push({ x: car.x, y: car.y, r: 12, life: 0.5, max: 0.5 });
+  spawnParticles(car.x, car.y, 14, '#ffd75e', 210);
+  spawnParticles(car.x, car.y, 12, '#ff9a3c', 170);
+  spawnParticles(car.x, car.y, 8, '#e5484d', 130);
+  for (let k = 0; k < 9; k += 1) {
+    game.particles.push({
+      x: car.x + rand(-12, 12), y: car.y + rand(-10, 10), vx: rand(-30, 30), vy: rand(-60, -25),
+      life: rand(0.7, 1.3), max: 1.3, size: rand(6, 11), color: 'rgba(38,38,44,0.85)',
+    });
+  }
+  audio.boom();
+  const dPlayer = Math.hypot(p.x - car.x, p.y - car.y);
+  if (dPlayer < 560) game.camera.shake = Math.max(game.camera.shake, clamp(24 - dPlayer * 0.032, 8, 22));
+
+  // The blast reaches everything nearby — cars, people, and Rook himself.
+  for (const other of game.cars) {
+    if (other === car || other.dead || other.wrecked) continue;
+    const d = Math.hypot(other.x - car.x, other.y - car.y);
+    if (d < 115) damageCar(other, 82 * (1 - d / 150));
+  }
+  for (const ped of game.peds) {
+    if (ped.dead || ped.state === 'down') continue;
+    const d = Math.hypot(ped.x - car.x, ped.y - car.y);
+    if (d < 100) damagePed(ped, Math.round(58 * (1 - d / 130)), !!car.lastHitByPlayer);
+  }
+
+  if (wasPlayerCar) {
+    car.driver = null;
+    p.car = null;
+    const side = car.angle + Math.PI / 2;
+    p.x = car.x + Math.cos(side) * (car.wid + 16);
+    p.y = car.y + Math.sin(side) * (car.wid + 16);
+    game.hurtPlayer(34, car.x, car.y);
+    if (game.screen === 'play') game.showToast('TOTALLED — and the whole Bay saw it');
+  } else if (dPlayer < 95) {
+    game.hurtPlayer(Math.round(42 * (1 - dPlayer / 130)), car.x, car.y);
+  }
+
+  if (game.screen === 'play' && (car.lastHitByPlayer || wasPlayerCar)) {
+    commitCrime(24, car.x, car.y);
+    if (filmingAt(car.x, car.y)) game.addClout(26);
+  }
+}
+
 function updateFx(dt) {
   for (const pt of game.particles) {
     pt.life -= dt;
@@ -643,6 +724,12 @@ function updateFx(dt) {
   game.particles = game.particles.filter((pt) => pt.life > 0);
   for (const t of game.tracers) t.life -= dt;
   game.tracers = game.tracers.filter((t) => t.life > 0);
+  for (const b of game.blasts) {
+    b.r += 300 * dt;
+    b.life -= dt;
+  }
+  game.blasts = game.blasts.filter((b) => b.life > 0);
+  if (game.hurtFx.t > 0) game.hurtFx.t = Math.max(0, game.hurtFx.t - dt / 0.7);
   if (game.banner) {
     game.banner.t -= dt;
     if (game.banner.t <= 0) game.banner = null;
@@ -663,6 +750,28 @@ function updateFx(dt) {
         x: car.x + rand(-8, 8), y: car.y + rand(-8, 8), vx: rand(-8, 8), vy: rand(-26, -14),
         life: rand(0.5, 1), max: 1, size: rand(4, 8), color: 'rgba(40,40,46,0.8)',
       });
+    }
+    // Zero health means fire, and fire means a countdown. Mission-critical
+    // cars (the steal target, the repo sedan, the Grand Prix rival) never
+    // ignite — they smoke and crawl, so no job can soft-lock on a wreck.
+    if (game.screen === 'play' && !car.wrecked && car.health <= 0
+      && car !== game.markedCar && car !== game.repoCar && car.driver !== 'racer') {
+      if (car.burnT === undefined) {
+        car.burnT = rand(0.9, 1.5);
+        if (car === game.player.car) {
+          game.showToast("SHE'S GOING TO BLOW — GET OUT (E)");
+          audio.crash(0.6);
+        }
+      }
+      car.burnT -= dt;
+      if (Math.random() < dt * 26) {
+        game.particles.push({
+          x: car.x + rand(-11, 11), y: car.y + rand(-8, 8), vx: rand(-16, 16), vy: rand(-52, -22),
+          life: rand(0.3, 0.55), max: 0.55, size: rand(3, 6.5),
+          color: pick(['#ff9a3c', '#ffd75e', '#ff6a2a', '#e5484d']),
+        });
+      }
+      if (car.burnT <= 0) explodeCar(car);
     }
     if (car.drift > 52 && Math.abs(car.speed) > 90) {
       const fx = Math.cos(car.angle);
@@ -769,6 +878,7 @@ function playerShoot() {
         hx = x;
         hy = y;
         damageCar(car, spec.carDmg);
+        car.lastHitByPlayer = true;
         spawnParticles(x, y, 4, '#ffd75e', 70);
         if (car.isPolice) commitCrime(24, car.x, car.y);
         break outer;
@@ -812,6 +922,7 @@ function playerPunch() {
     if (car.dead) continue;
     if ((car.x - fx) ** 2 + (car.y - fy) ** 2 < (car.r + 8) ** 2) {
       damageCar(car, 4);
+      car.lastHitByPlayer = true;
       spawnParticles(fx, fy, 3, '#ffd75e', 50);
       return;
     }
@@ -823,7 +934,8 @@ function nearestEnterableCar() {
   let best = null;
   let bestD = 60 * 60;
   for (const car of game.cars) {
-    if (car.dead || car.driver === 'player' || car.driver === 'racer') continue;
+    if (car.dead || car.wrecked || car.burnT !== undefined) continue;
+    if (car.driver === 'player' || car.driver === 'racer') continue;
     const d = (car.x - p.x) ** 2 + (car.y - p.y) ** 2;
     if (d < bestD) {
       bestD = d;

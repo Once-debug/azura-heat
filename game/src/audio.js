@@ -93,6 +93,13 @@ class AudioSys {
     this.tone(70, 0.2, 'triangle', 0.25 * strength, 35);
   }
 
+  /** A car going up: a low noise bloom with a sub thump underneath. */
+  boom() {
+    this.noise(0.55, 0.7, 150, 0.35);
+    this.noise(0.3, 0.4, 480, 0.5, 0.02);
+    this.tone(58, 0.5, 'sine', 0.6, 26);
+  }
+
   horn() {
     this.tone(370, 0.28, 'square', 0.12);
     this.tone(466, 0.28, 'square', 0.1);

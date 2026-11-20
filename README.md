@@ -47,7 +47,16 @@ Pure weather, no malice in it.
   trucks, buses — steal them parked or pull the driver out. Plus the Pier 9
   speedboat: the APD cannot follow you onto the water.
 - **Fight on foot.** Fists, a pistol, and an SMG from Iron & Ivory Arms,
-  with body armor that soaks most of what hits you.
+  with body armor that soaks most of what hits you. Incoming fire is never
+  silent: the screen edge flashes red with a wedge pointing back at the
+  shooter, and your last hit points pulse while you are close to flatlining.
+- **Blow the doors off.** A car beaten to zero health catches fire, then
+  explodes — shockwave, fireball, a driver bailing at the last second, and a
+  charred husk that stays on the street. Blasts wound everyone nearby and
+  can touch off the next car over, so a traffic jam is a chain reaction
+  waiting for a spark. If it is your car burning, you get one warning:
+  get out, or be thrown out. (Mission-critical cars are armored by the
+  plot: they smoke and crawl, but they never blow.)
 - **Spend it.** Sal's respray bay ($150: new color, no stars), SMG and armor
   at the gun shop, and the Palms safehouse ($2,500) — its door saves your
   game and kills the heat.

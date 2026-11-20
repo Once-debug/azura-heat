@@ -20,6 +20,38 @@ function hash(n) {
   return s - Math.floor(s);
 }
 
+// Pre-rendered radial glows. The dusk pass used to build a fresh gradient for
+// every lamp and headlight on screen, every frame — the one reliable source
+// of hitches on weak machines. A sprite drawn with drawImage under 'lighter'
+// is the same light at a fraction of the cost; where canvas creation is not
+// available (headless test stubs) the code falls back to live gradients.
+let glowSprites = null;
+let glowSpritesTried = false;
+function getGlowSprites() {
+  if (glowSpritesTried) return glowSprites;
+  glowSpritesTried = true;
+  if (typeof document === 'undefined' || !document.createElement) return null;
+  const make = (rgb) => {
+    const c = document.createElement('canvas');
+    c.width = 128;
+    c.height = 128;
+    const g2 = c.getContext('2d');
+    const gr = g2.createRadialGradient(64, 64, 2, 64, 64, 64);
+    gr.addColorStop(0, `rgba(${rgb},1)`);
+    gr.addColorStop(1, `rgba(${rgb},0)`);
+    g2.fillStyle = gr;
+    g2.fillRect(0, 0, 128, 128);
+    return c;
+  };
+  glowSprites = {
+    warm: make('255,196,110'),
+    head: make('255,238,176'),
+    tail: make('255,60,40'),
+    cyan: make('64,224,255'),
+  };
+  return glowSprites;
+}
+
 const GROUND = {
   downtown: '#484d5c', residential: '#3e5c46', industrial: '#5b5044',
   harbor: '#575046', park: '#3d6b46', parking: '#3b404d', water: '#14486b',
@@ -722,13 +754,20 @@ function drawPackages(ctx, game) {
     const s = spots[i];
     if (s.x < cam.x - 60 || s.y < cam.y - 60 || s.x > cam.x + game.view.w + 60 || s.y > cam.y + game.view.h + 60) continue;
     const pulse = 0.6 + Math.sin(game.time * 3.4 + i * 1.3) * 0.4;
-    const g = ctx.createRadialGradient(s.x, s.y, 2, s.x, s.y, 26);
-    g.addColorStop(0, `rgba(64,224,255,${0.35 * pulse})`);
-    g.addColorStop(1, 'rgba(64,224,255,0)');
-    ctx.fillStyle = g;
-    ctx.beginPath();
-    ctx.arc(s.x, s.y, 26, 0, Math.PI * 2);
-    ctx.fill();
+    const spr = getGlowSprites();
+    if (spr) {
+      ctx.globalAlpha = 0.35 * pulse;
+      ctx.drawImage(spr.cyan, s.x - 26, s.y - 26, 52, 52);
+      ctx.globalAlpha = 1;
+    } else {
+      const g = ctx.createRadialGradient(s.x, s.y, 2, s.x, s.y, 26);
+      g.addColorStop(0, `rgba(64,224,255,${0.35 * pulse})`);
+      g.addColorStop(1, 'rgba(64,224,255,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, 26, 0, Math.PI * 2);
+      ctx.fill();
+    }
     ctx.save();
     ctx.translate(s.x, s.y - 3 + Math.sin(game.time * 2.6 + i) * 2);
     ctx.rotate(game.time * 1.8 + i);
@@ -948,7 +987,48 @@ function drawBoatShape(ctx, boat) {
   ctx.restore();
 }
 
+/** A burnt-out husk: charred body, blown glass, nothing left that lights up. */
+function drawWreckShape(ctx, car) {
+  ctx.save();
+  ctx.translate(car.x, car.y);
+  ctx.rotate(car.angle);
+  const L = car.len;
+  const W = car.wid;
+  ctx.fillStyle = 'rgba(0,0,0,0.35)';
+  rr(ctx, -L / 2 + 3, -W / 2 + 5, L, W, 6);
+  ctx.fill();
+  ctx.fillStyle = '#17171c';
+  rr(ctx, -L / 2, -W / 2, L, W, 6);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,0.7)';
+  ctx.lineWidth = 1.5;
+  rr(ctx, -L / 2, -W / 2, L, W, 6);
+  ctx.stroke();
+  // Scorch blotches, fixed per car so the husk does not shimmer.
+  ctx.fillStyle = 'rgba(0,0,0,0.45)';
+  for (let k = 0; k < 3; k += 1) {
+    const bx = (hash(car.id * 7 + k) - 0.5) * L * 0.6;
+    const by = (hash(car.id * 13 + k) - 0.5) * W * 0.5;
+    ctx.beginPath();
+    ctx.arc(bx, by, 5 + hash(car.id + k * 3) * 6, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  // Blown-out glasshouse.
+  ctx.fillStyle = '#0a0c10';
+  rr(ctx, -L * 0.16, -W * 0.36, L * 0.38, W * 0.72, 3);
+  ctx.fill();
+  ctx.fillStyle = '#14161c';
+  for (const [wx, wy] of [[-L * 0.32, -W / 2 - 1], [L * 0.32, -W / 2 - 1], [-L * 0.32, W / 2 - 3], [L * 0.32, W / 2 - 3]]) {
+    ctx.fillRect(wx - 5, wy, 10, 4);
+  }
+  ctx.restore();
+}
+
 function drawCarShape(ctx, car, time) {
+  if (car.wrecked) {
+    drawWreckShape(ctx, car);
+    return;
+  }
   if (car.type === 'moto') {
     drawMotoShape(ctx, car, time);
     return;
@@ -1728,6 +1808,7 @@ function drawHelp(ctx, game) {
     'Follow the gold marker. Finish Vera and Sal\'s jobs to make Rook\'s name.',
     'Crimes raise your stars. Break the police line of sight to cool off.',
     'Get caught standing still by an officer and you are BUSTED.',
+    'A car beaten to scrap catches fire, then blows — bail out, and keep clear of the blast. Wrecks chain.',
     'Die and Azura General patches you up — for a fee.',
     'Fares at the cab stand and parcels at Bay City Couriers pay forever.',
     "Hot? Roll into Sal's bay: $150 buys a respray and a clean slate.",
@@ -1929,6 +2010,22 @@ export function drawGame(ctx, game) {
     ctx.fillRect(pt.x - pt.size / 2, pt.y - pt.size / 2, pt.size, pt.size);
   }
   ctx.globalAlpha = 1;
+  // Explosion shockwaves: a flash disc inside an expanding ring.
+  for (const b of game.blasts || []) {
+    const f = clamp(b.life / b.max, 0, 1);
+    ctx.globalAlpha = f * 0.55;
+    ctx.fillStyle = '#ffdca8';
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, b.r * 0.55, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = f * 0.85;
+    ctx.strokeStyle = '#ffb054';
+    ctx.lineWidth = 2 + 5 * f;
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
   // Dropped ammo boxes bob gently where a thug went down.
   for (const pk of game.pickups) {
     const bob = Math.sin(game.time * 5 + pk.x) * 2.4;
@@ -1951,42 +2048,56 @@ export function drawGame(ctx, game) {
   ctx.save();
   ctx.translate(-Math.round(cam.x + (cam.shakeX || 0)), -Math.round(cam.y + (cam.shakeY || 0)));
   ctx.globalCompositeOperation = 'lighter';
+  const spr = getGlowSprites();
   for (const p of game.city.props) {
     if (p.kind !== 'lamp') continue;
     if (p.x < cam.x - 60 || p.y < cam.y - 60 || p.x > cam.x + w + 60 || p.y > cam.y + h + 60) continue;
-    const g = ctx.createRadialGradient(p.x, p.y, 2, p.x, p.y, 44);
-    g.addColorStop(0, `rgba(255,196,110,${0.13 + nightF * 0.27})`);
-    g.addColorStop(1, 'rgba(255,196,110,0)');
-    ctx.fillStyle = g;
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, 44, 0, Math.PI * 2);
-    ctx.fill();
+    if (spr) {
+      ctx.globalAlpha = 0.13 + nightF * 0.27;
+      ctx.drawImage(spr.warm, p.x - 44, p.y - 44, 88, 88);
+    } else {
+      const g = ctx.createRadialGradient(p.x, p.y, 2, p.x, p.y, 44);
+      g.addColorStop(0, `rgba(255,196,110,${0.13 + nightF * 0.27})`);
+      g.addColorStop(1, 'rgba(255,196,110,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 44, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
   for (const car of game.cars) {
-    if (car.dead) continue;
+    if (car.dead || car.wrecked) continue;
     if (car.x < cam.x - 90 || car.x > cam.x + w + 90 || car.y < cam.y - 90 || car.y > cam.y + h + 90) continue;
     const fx = Math.cos(car.angle);
     const fy = Math.sin(car.angle);
     const hx = car.x + fx * car.len * 0.5;
     const hy = car.y + fy * car.len * 0.5;
-    const g = ctx.createRadialGradient(hx, hy, 2, hx + fx * 40, hy + fy * 40, 74);
-    g.addColorStop(0, `rgba(255,238,176,${0.09 + nightF * 0.19})`);
-    g.addColorStop(1, 'rgba(255,238,176,0)');
-    ctx.fillStyle = g;
-    ctx.beginPath();
-    ctx.arc(hx + fx * 30, hy + fy * 30, 74, 0, Math.PI * 2);
-    ctx.fill();
-    // Taillights bleed a little red into the dark, more under braking.
     const tx = car.x - fx * car.len * 0.5;
     const ty = car.y - fy * car.len * 0.5;
-    const tg = ctx.createRadialGradient(tx, ty, 1, tx, ty, 20);
-    tg.addColorStop(0, `rgba(255,60,40,${car.brakeLight > 0 ? 0.34 : 0.1 + nightF * 0.1})`);
-    tg.addColorStop(1, 'rgba(255,60,40,0)');
-    ctx.fillStyle = tg;
-    ctx.beginPath();
-    ctx.arc(tx, ty, 20, 0, Math.PI * 2);
-    ctx.fill();
+    if (spr) {
+      ctx.globalAlpha = 0.09 + nightF * 0.19;
+      ctx.drawImage(spr.head, hx + fx * 34 - 74, hy + fy * 34 - 74, 148, 148);
+      // Taillights bleed a little red into the dark, more under braking.
+      ctx.globalAlpha = car.brakeLight > 0 ? 0.34 : 0.1 + nightF * 0.1;
+      ctx.drawImage(spr.tail, tx - 20, ty - 20, 40, 40);
+    } else {
+      const g = ctx.createRadialGradient(hx, hy, 2, hx + fx * 40, hy + fy * 40, 74);
+      g.addColorStop(0, `rgba(255,238,176,${0.09 + nightF * 0.19})`);
+      g.addColorStop(1, 'rgba(255,238,176,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(hx + fx * 30, hy + fy * 30, 74, 0, Math.PI * 2);
+      ctx.fill();
+      const tg = ctx.createRadialGradient(tx, ty, 1, tx, ty, 20);
+      tg.addColorStop(0, `rgba(255,60,40,${car.brakeLight > 0 ? 0.34 : 0.1 + nightF * 0.1})`);
+      tg.addColorStop(1, 'rgba(255,60,40,0)');
+      ctx.fillStyle = tg;
+      ctx.beginPath();
+      ctx.arc(tx, ty, 20, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
+  ctx.globalAlpha = 1;
   ctx.restore();
   ctx.globalCompositeOperation = 'source-over';
 
@@ -2005,6 +2116,37 @@ export function drawGame(ctx, game) {
   vg.addColorStop(1, 'rgba(4,4,12,0.3)');
   ctx.fillStyle = vg;
   ctx.fillRect(0, 0, w, h);
+
+  // Incoming damage reads at the screen edge: a red flash with a wedge
+  // pointing back at whoever landed the hit, plus a slow pulse while Rook
+  // is close to flatlining — getting shot should never be a silent event.
+  if (game.screen === 'play' && game.player) {
+    const hf = game.hurtFx;
+    const hurtA = hf && hf.t > 0 ? hf.t * hf.mag : 0;
+    const lowA = game.player.hp > 0 && game.player.hp < 30
+      ? (1 - game.player.hp / 30) * (0.13 + 0.06 * Math.sin(game.time * 5.2))
+      : 0;
+    if (hurtA > 0.01 || lowA > 0.01) {
+      const rg = ctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.36, w / 2, h / 2, Math.max(w, h) * 0.72);
+      rg.addColorStop(0, 'rgba(198,28,28,0)');
+      rg.addColorStop(1, `rgba(198,28,28,${clamp(0.5 * hurtA + lowA, 0, 0.55)})`);
+      ctx.fillStyle = rg;
+      ctx.fillRect(0, 0, w, h);
+    }
+    if (hurtA > 0.01) {
+      ctx.save();
+      ctx.translate(w / 2, h / 2);
+      ctx.rotate(hf.ang);
+      ctx.fillStyle = `rgba(255,64,40,${0.6 * hurtA})`;
+      ctx.beginPath();
+      ctx.moveTo(70, -17);
+      ctx.lineTo(104, 0);
+      ctx.lineTo(70, 17);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+  }
 
   // Rain: slanted streaks falling through the frame while a shower passes.
   if (game.rainDrops && game.rainDrops.length) {
